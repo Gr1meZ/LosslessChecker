@@ -17,6 +17,9 @@ public class AudioDecoder
         var left = new List<float>(totalFrames);
         var right = new List<float>(totalFrames);
 
+        if (format.Channels > 2)
+            throw new NotSupportedException("Only mono and stereo files are supported");
+
         if (format.Channels == 1)
         {
             var buffer = new float[4096];
@@ -26,7 +29,7 @@ public class AudioDecoder
                 if (ct.IsCancellationRequested) throw new OperationCanceledException();
                 for (int i = 0; i < read; i++) left.Add(buffer[i]);
             }
-            return new StereoBuffer(left.ToArray(), left.ToArray(), format.SampleRate);
+            return new StereoBuffer(left.ToArray(), Array.Empty<float>(), format.SampleRate);
         }
 
         // Stereo: interleaved L/R
