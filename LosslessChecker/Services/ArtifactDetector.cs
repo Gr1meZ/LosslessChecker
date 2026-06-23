@@ -8,10 +8,10 @@ public class ArtifactDetector
     private const int FftSize = 4096;
     private const int HopSize = 1024;
 
-    public (bool hasArtifacts, string level) Detect(float[] samples, int sampleRate, double cutoffFrequency)
+    public (bool hasArtifacts, string level, string artifactType) Detect(float[] samples, int sampleRate, double cutoffFrequency)
     {
         if (samples.Length < FftSize * 2)
-            return (false, "None");
+            return (false, "None", "None");
 
         var nyquist = sampleRate / 2.0;
         var cutoffBin = (int)(cutoffFrequency / nyquist * (FftSize / 2));
@@ -90,7 +90,7 @@ public class ArtifactDetector
         }
 
         if (frameCount == 0)
-            return (false, "None");
+            return (false, "None", "None");
 
         double avgFlatness = totalFlatness / frameCount;
         double avgSlope = totalSlope / frameCount;
@@ -99,13 +99,64 @@ public class ArtifactDetector
         // Steep drop (avgSlope < -0.08 dB/bin) = brickwall = MP3 artifact
         // Flat (avgSlope > -0.02 dB/bin) = natural rolloff or noise
 
+        bool hasArtifacts;
+        string level;
         if (avgFlatness > 0.4 && avgSlope < -0.1)
-            return (true, "Strong");
-        if (avgFlatness > 0.25 && avgSlope < -0.06)
-            return (true, "Medium");
-        if (avgFlatness > 0.1 || avgSlope < -0.04)
-            return (true, "Weak");
+            (hasArtifacts, level) = (true, "Strong");
+        else if (avgFlatness > 0.25 && avgSlope < -0.06)
+            (hasArtifacts, level) = (true, "Medium");
+        else if (avgFlatness > 0.1 || avgSlope < -0.04)
+            (hasArtifacts, level) = (true, "Weak");
+        else
+            (hasArtifacts, level) = (false, "None");
 
-        return (false, "None");
+        string artifactType = level switch
+        {
+            "Strong" or "Medium" => DetectMp3Sizzle(samples, sampleRate, cutoffFrequency)
+                ? "MP3" : "Unknown",
+            "Weak" => "Unknown",
+            _ => "None"
+        };
+        return (hasArtifacts, level, artifactType);
+    }
+
+    private static bool DetectMp3Sizzle(float[] samples, int sampleRate, double cutoffFreq)
+    {
+        if (sampleRate < 44100) return false;
+
+        int fftSize = 4096;
+        var fft = new Fft(fftSize);
+        var window = Window.Hann(fftSize);
+        double sizzleEnergy = 0;
+        double totalHfEnergy = 0;
+        int frames = 0;
+
+        int bin15500 = (int)(15500.0 / (sampleRate / 2.0) * (fftSize / 2));
+        int bin16500 = (int)(16500.0 / (sampleRate / 2.0) * (fftSize / 2));
+        int cutoffBin = Math.Min((int)(cutoffFreq / (sampleRate / 2.0) * (fftSize / 2)), fftSize / 2 - 1);
+
+        for (int pos = 0; pos + fftSize <= samples.Length; pos += 1024)
+        {
+            var frame = new float[fftSize];
+            Array.Copy(samples, pos, frame, 0, fftSize);
+            for (int i = 0; i < fftSize; i++) frame[i] *= window[i];
+            var real = new float[fftSize];
+            var imag = new float[fftSize];
+            Array.Copy(frame, real, fftSize);
+            fft.Direct(real, imag);
+
+            for (int i = bin15500; i < bin16500 && i < real.Length / 2; i++)
+                sizzleEnergy += real[i] * real[i] + imag[i] * imag[i];
+
+            for (int i = bin15500; i < cutoffBin && i < real.Length / 2; i++)
+                totalHfEnergy += real[i] * real[i] + imag[i] * imag[i];
+
+            frames++;
+            if (frames >= 20) break;
+        }
+
+        if (frames == 0 || totalHfEnergy <= 0) return false;
+        double ratio = sizzleEnergy / totalHfEnergy;
+        return ratio > 0.4;
     }
 }

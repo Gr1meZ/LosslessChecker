@@ -30,8 +30,11 @@ public class UpscaleDetector
 
         if (maxHfDb < -50)
         {
+            bool isDither = HasDitherSignature(averagedSpectrum, startBin);
             return (true,
-                $"Hi-Res ({sampleRate}Hz) but no content above 22kHz (max {maxHfDb:F0} dB). Likely upscale from 44.1/48kHz source.",
+                isDither
+                    ? $"Hi-Res ({sampleRate}Hz) but no content above 22kHz (max {maxHfDb:F0} dB). Flat dither noise — upscale from CD."
+                    : $"Hi-Res ({sampleRate}Hz) but no content above 22kHz (max {maxHfDb:F0} dB). Likely upscale from 44.1/48kHz source.",
                 maxHfDb);
         }
 
@@ -43,5 +46,26 @@ public class UpscaleDetector
         }
 
         return (false, $"Valid Hi-Res content detected above 22kHz ({maxHfDb:F0} dB).", maxHfDb);
+    }
+
+    private static bool HasDitherSignature(double[] spectrum, int startBin)
+    {
+        if (startBin + 20 >= spectrum.Length) return false;
+
+        double sum = 0, sumSq = 0;
+        int count = 0;
+        for (int i = startBin; i < spectrum.Length; i++)
+        {
+            double db = 20.0 * Math.Log10(Math.Max(spectrum[i], 1e-10));
+            sum += db;
+            sumSq += db * db;
+            count++;
+        }
+
+        if (count < 10) return false;
+        double mean = sum / count;
+        double variance = sumSq / count - mean * mean;
+
+        return variance < 9.0;
     }
 }
