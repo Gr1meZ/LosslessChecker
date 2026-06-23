@@ -157,9 +157,7 @@ public partial class MainViewModel : ObservableObject
                             UpdateSummary();
                     });
 
-                    // Force GC every 15 files to reclaim decoded PCM samples (~50 MB each)
-                    if (done % 15 == 0)
-                        GC.Collect(1, GCCollectionMode.Optimized, false);
+
                 }
             });
 
