@@ -33,5 +33,5 @@ public record AnalysisResult
     public AnalysisStatus AnalysisStatus { get; init; } = AnalysisStatus.Pending;
 
     public double[] AveragedSpectrum { get; init; } = Array.Empty<double>();
-    public double[][] SpectrogramData { get; init; } = Array.Empty<double[]>();
+    public byte[][] SpectrogramData { get; init; } = Array.Empty<byte[]>();
 }

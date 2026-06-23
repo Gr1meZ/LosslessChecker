@@ -63,6 +63,9 @@ public partial class AudioFileViewModel : ObservableObject
 
     public string FilePath { get; }
 
+    // Raw spectrogram data stored as byte[] (dB-quantized), built into bitmap lazily
+    internal byte[][]? RawSpectrogram { get; private set; }
+
     public AudioFileViewModel(AudioFileInfo fileInfo)
     {
         FilePath = fileInfo.FilePath;
@@ -89,39 +92,41 @@ public partial class AudioFileViewModel : ObservableObject
         NoiseFloorDb = result.NoiseFloorDb;
         IsUpscale = result.IsUpscale;
 
-        if (result.SpectrogramData is { Length: > 0 } frames)
-        {
-            SpectrogramBitmap = BuildSpectrogramBitmap(frames);
-        }
+        // Store raw spectrogram data only — bitmap built on demand
+        if (result.SpectrogramData is { Length: > 0 })
+            RawSpectrogram = result.SpectrogramData;
     }
 
-    private static WriteableBitmap BuildSpectrogramBitmap(double[][] frames)
+    public WriteableBitmap? GetOrBuildSpectrogram()
+    {
+        if (SpectrogramBitmap != null)
+            return SpectrogramBitmap;
+
+        if (RawSpectrogram is not { Length: > 0 } frames || frames[0].Length == 0)
+            return null;
+
+        SpectrogramBitmap = BuildBitmap(frames);
+
+        // Free raw data after bitmap is built (user is viewing it)
+        RawSpectrogram = null;
+        return SpectrogramBitmap;
+    }
+
+    private static WriteableBitmap BuildBitmap(byte[][] frames)
     {
         int width = frames.Length;
         int height = frames[0].Length;
-        if (width < 1 || height < 1)
-            return null!;
 
         var bmp = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
         var pixels = new byte[width * height * 4];
-
-        // Find global max magnitude across all frames
-        double maxMag = 0;
-        foreach (var frame in frames)
-            foreach (var v in frame)
-                if (v > maxMag) maxMag = v;
-        if (maxMag < 1e-10) maxMag = 1e-10;
 
         for (int x = 0; x < width; x++)
         {
             for (int y = 0; y < height; y++)
             {
-                double mag = frames[x][y];
-                double db = 20.0 * Math.Log10(Math.Max(mag, 1e-10) / maxMag);
-                // Clamp: -96 dB to 0 dB → 0..1
-                double t = Math.Max(0, Math.Min(1, (db + 96.0) / 96.0));
+                byte dbByte = frames[x][y];
+                double t = dbByte / 255.0;
 
-                // Inverted: bottom = 0 Hz, top = Nyquist
                 int py = height - 1 - y;
                 int idx = (py * width + x) * 4;
 
@@ -141,30 +146,11 @@ public partial class AudioFileViewModel : ObservableObject
 
     private static (byte r, byte g, byte b) HotColormap(double t)
     {
-        // "Hot" colormap: black → red → orange → yellow → white
-        // Similar to professional audio analyzers (Spek, Audition)
-        if (t <= 0)
-            return (0, 0, 0);
-
-        if (t < 0.25)
-        {
-            double s = t / 0.25;
-            return ((byte)(255 * s), 0, 0);
-        }
-        if (t < 0.5)
-        {
-            double s = (t - 0.25) / 0.25;
-            return (255, (byte)(255 * s), 0);
-        }
-        if (t < 0.85)
-        {
-            double s = (t - 0.5) / 0.35;
-            return (255, (byte)(128 + 127 * s), (byte)(255 * s));
-        }
-        else
-        {
-            double s = (t - 0.85) / 0.15;
-            return (255, 255, (byte)(128 + 127 * s));
-        }
+        if (t <= 0) return (0, 0, 0);
+        if (t < 0.25) { double s = t / 0.25; return ((byte)(255 * s), 0, 0); }
+        if (t < 0.5) { double s = (t - 0.25) / 0.25; return (255, (byte)(255 * s), 0); }
+        if (t < 0.85) { double s = (t - 0.5) / 0.35; return (255, (byte)(128 + 127 * s), (byte)(255 * s)); }
+        double s2 = (t - 0.85) / 0.15;
+        return (255, 255, (byte)(128 + 127 * s2));
     }
 }
