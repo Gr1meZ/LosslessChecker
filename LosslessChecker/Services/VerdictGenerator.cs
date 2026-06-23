@@ -57,7 +57,7 @@ public class VerdictGenerator
             flags.Add($"Bit depth suspicious");
         if (r.IsUpscale)
             flags.Add($"Hi-Res upscale suspected (max HF {r.MaxHfDb:F0} dB)");
-        sb.AppendLine(flags.Count > 0 ? string.Join("\n   - ", flags) : "None");
+        sb.AppendLine(flags.Count > 0 ? "   - " + string.Join("\n   - ", flags) : "None");
         sb.AppendLine();
 
         sb.Append("5. OVERALL VERDICT: ");
