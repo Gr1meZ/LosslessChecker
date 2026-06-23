@@ -7,27 +7,19 @@ public class CutoffDetector
 {
     private const int FftSize = 4096;
     private const int HopSize = 2048;
-    private const int SpectroFreqBins = 256;
-    private const int SpectroMaxFrames = 300;
 
-    public (double cutoff, double cutoffSlope, double[] spectrum, byte[] spectrogram, int sw, int sh) DetectFull(
+    public (double cutoff, double cutoffSlope, double[] spectrum) DetectFull(
         float[] samples, int sampleRate)
     {
-        int height = SpectroFreqBins;
-        if (samples.Length < FftSize)
-            return (sampleRate / 2.0, 0, Array.Empty<double>(), Array.Empty<byte>(), 0, height);
-
         var nyquist = sampleRate / 2.0;
+        if (samples.Length < FftSize)
+            return (nyquist, 0, Array.Empty<double>());
+
         var fft = new Fft(FftSize);
         var window = Window.Hann(FftSize);
         var avgMagnitudes = new double[FftSize / 2];
         int frameCount = 0;
 
-        int spectroStep = Math.Max(1, (samples.Length - FftSize) / HopSize / SpectroMaxFrames);
-        int spectroCounter = 0;
-        double globalPeakMag = 0;
-
-        // Pass 1: average spectrum + find global peak
         for (int pos = 0; pos + FftSize <= samples.Length; pos += HopSize)
         {
             var frame = new float[FftSize];
@@ -38,60 +30,18 @@ public class CutoffDetector
             Array.Copy(frame, real, FftSize);
             fft.Direct(real, imag);
             for (int i = 0; i < FftSize / 2; i++)
-            {
-                var mag = Math.Sqrt(real[i] * real[i] + imag[i] * imag[i]);
-                avgMagnitudes[i] += mag;
-            }
+                avgMagnitudes[i] += Math.Sqrt(real[i] * real[i] + imag[i] * imag[i]);
             frameCount++;
-            spectroCounter++;
-            if (spectroCounter % spectroStep == 0)
-                for (int j = 0; j < FftSize / 2; j++)
-                {
-                    double m = Math.Sqrt(real[j] * real[j] + imag[j] * imag[j]);
-                    if (m > globalPeakMag) globalPeakMag = m;
-                }
         }
 
         if (frameCount == 0)
-            return (nyquist, 0, Array.Empty<double>(), Array.Empty<byte>(), 0, height);
+            return (nyquist, 0, Array.Empty<double>());
 
         for (int i = 0; i < avgMagnitudes.Length; i++)
             avgMagnitudes[i] /= frameCount;
 
-        // Pass 2: build spectrogram
-        spectroCounter = 0;
-        int framesBuilt = 0;
-        int width = Math.Min(SpectroMaxFrames, ((samples.Length - FftSize) / HopSize) / spectroStep + 1);
-        var flat = new byte[width * height];
-
-        for (int pos = 0; pos + FftSize <= samples.Length; pos += HopSize)
-        {
-            var frame = new float[FftSize];
-            Array.Copy(samples, pos, frame, 0, FftSize);
-            for (int i = 0; i < FftSize; i++) frame[i] *= window[i];
-            var real = new float[FftSize];
-            var imag = new float[FftSize];
-            Array.Copy(frame, real, FftSize);
-            fft.Direct(real, imag);
-            spectroCounter++;
-            if (spectroCounter % spectroStep == 0 && framesBuilt < width)
-            {
-                double ratio = (double)(FftSize / 2) / height;
-                double refMag = Math.Max(globalPeakMag, 1e-10);
-                int offset = framesBuilt * height;
-                for (int j = 0; j < height; j++)
-                {
-                    int srcIdx = Math.Min((int)(j * ratio), FftSize / 2 - 1);
-                    double mag = Math.Sqrt(real[srcIdx] * real[srcIdx] + imag[srcIdx] * imag[srcIdx]);
-                    double db = 20.0 * Math.Log10(Math.Max(mag, 1e-10) / refMag);
-                    flat[offset + j] = (byte)Math.Max(0, Math.Min(255, (int)((db + 96.0) / 96.0 * 255)));
-                }
-                framesBuilt++;
-            }
-        }
-
         var (cutoff, cutoffSlope) = FindCutoffByDerivative(avgMagnitudes, nyquist);
-        return (cutoff, cutoffSlope, avgMagnitudes, flat, framesBuilt, height);
+        return (cutoff, cutoffSlope, avgMagnitudes);
     }
 
     public double DetectCutoff(float[] samples, int sampleRate)
