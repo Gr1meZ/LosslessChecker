@@ -17,6 +17,9 @@ public partial class AudioFileViewModel : ObservableObject
     private double _cutoffFrequency;
 
     [ObservableProperty]
+    private double _cutoffSlope;
+
+    [ObservableProperty]
     private double _dynamicRange;
 
     [ObservableProperty]
@@ -32,6 +35,9 @@ public partial class AudioFileViewModel : ObservableObject
     private string _statusMessage = "";
 
     [ObservableProperty]
+    private string _verdict = "";
+
+    [ObservableProperty]
     private bool _hasArtifacts;
 
     [ObservableProperty]
@@ -44,7 +50,13 @@ public partial class AudioFileViewModel : ObservableObject
     private string _errorMessage = "";
 
     [ObservableProperty]
-    private double[] _averagedSpectrum = Array.Empty<double>();
+    private bool _bitDepthSuspicious;
+
+    [ObservableProperty]
+    private double _noiseFloorDb;
+
+    [ObservableProperty]
+    private bool _isUpscale;
 
     [ObservableProperty]
     private WriteableBitmap? _spectrogramBitmap;
@@ -62,16 +74,20 @@ public partial class AudioFileViewModel : ObservableObject
         FileName = result.FileName;
         Format = result.Format;
         CutoffFrequency = result.CutoffFrequency;
+        CutoffSlope = result.CutoffSlope;
         DynamicRange = result.DynamicRange;
         TruePeak = result.TruePeak;
         ClippingPercent = result.ClippingPercent;
         LosslessScore = result.LosslessScore;
         StatusMessage = result.Status;
+        Verdict = result.Verdict;
         HasArtifacts = result.HasArtifacts;
         ArtifactLevel = result.ArtifactLevel;
         AnalysisStatus = result.AnalysisStatus;
         ErrorMessage = result.ErrorMessage ?? "";
-        AveragedSpectrum = result.AveragedSpectrum;
+        BitDepthSuspicious = result.BitDepthSuspicious;
+        NoiseFloorDb = result.NoiseFloorDb;
+        IsUpscale = result.IsUpscale;
 
         if (result.SpectrogramData is { Length: > 0 } frames)
         {
@@ -89,13 +105,12 @@ public partial class AudioFileViewModel : ObservableObject
         var bmp = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
         var pixels = new byte[width * height * 4];
 
-        // Find global dB range
-        var allMags = frames.SelectMany(f => f).Where(v => v > 1e-10).ToList();
-        if (allMags.Count == 0) return bmp;
-        double maxMag = allMags.Max();
-        double minDb = 20.0 * Math.Log10(allMags.Min() / maxMag);
-        double dbRange = -minDb;
-        if (dbRange < 1) dbRange = 1;
+        // Find global max magnitude across all frames
+        double maxMag = 0;
+        foreach (var frame in frames)
+            foreach (var v in frame)
+                if (v > maxMag) maxMag = v;
+        if (maxMag < 1e-10) maxMag = 1e-10;
 
         for (int x = 0; x < width; x++)
         {
@@ -103,14 +118,14 @@ public partial class AudioFileViewModel : ObservableObject
             {
                 double mag = frames[x][y];
                 double db = 20.0 * Math.Log10(Math.Max(mag, 1e-10) / maxMag);
-                double t = Math.Max(0, Math.Min(1, (db - minDb) / dbRange));
+                // Clamp: -96 dB to 0 dB → 0..1
+                double t = Math.Max(0, Math.Min(1, (db + 96.0) / 96.0));
 
                 // Inverted: bottom = 0 Hz, top = Nyquist
                 int py = height - 1 - y;
                 int idx = (py * width + x) * 4;
 
-                // Viridis-like colormap
-                (byte r, byte g, byte b) = ViridisColor(t);
+                var (r, g, b) = HotColormap(t);
                 pixels[idx + 0] = b;
                 pixels[idx + 1] = g;
                 pixels[idx + 2] = r;
@@ -124,28 +139,32 @@ public partial class AudioFileViewModel : ObservableObject
         return bmp;
     }
 
-    private static (byte r, byte g, byte b) ViridisColor(double t)
+    private static (byte r, byte g, byte b) HotColormap(double t)
     {
-        // Simplified viridis: dark blue → green → yellow
+        // "Hot" colormap: black → red → orange → yellow → white
+        // Similar to professional audio analyzers (Spek, Audition)
+        if (t <= 0)
+            return (0, 0, 0);
+
         if (t < 0.25)
         {
             double s = t / 0.25;
-            return ((byte)(72 * s), (byte)(35 + 109 * s), (byte)(143 - 16 * s));
+            return ((byte)(255 * s), 0, 0);
         }
         if (t < 0.5)
         {
             double s = (t - 0.25) / 0.25;
-            return ((byte)(72 + 110 * s), (byte)(144 + 52 * s), (byte)(127 - 90 * s));
+            return (255, (byte)(255 * s), 0);
         }
-        if (t < 0.75)
+        if (t < 0.85)
         {
-            double s = (t - 0.5) / 0.25;
-            return ((byte)(182 + 69 * s), (byte)(196 + 24 * s), (byte)(37 - 10 * s));
+            double s = (t - 0.5) / 0.35;
+            return (255, (byte)(128 + 127 * s), (byte)(255 * s));
         }
         else
         {
-            double s = (t - 0.75) / 0.25;
-            return ((byte)(251 - 2 * s), (byte)(220 + 11 * s), (byte)(27 - 2 * s));
+            double s = (t - 0.85) / 0.15;
+            return (255, 255, (byte)(128 + 127 * s));
         }
     }
 }

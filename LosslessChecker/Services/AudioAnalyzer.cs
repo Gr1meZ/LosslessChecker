@@ -10,6 +10,9 @@ public class AudioAnalyzer
     private readonly ArtifactDetector _artifactDetector = new();
     private readonly DrMeter _drMeter = new();
     private readonly ScoreCalculator _scoreCalculator = new();
+    private readonly BitDepthValidator _bitDepthValidator = new();
+    private readonly UpscaleDetector _upscaleDetector = new();
+    private readonly VerdictGenerator _verdictGenerator = new();
 
     public AnalysisResult Analyze(AudioFileInfo fileInfo, CancellationToken ct = default)
     {
@@ -57,14 +60,15 @@ public class AudioAnalyzer
                 {
                     AnalysisStatus = AnalysisStatus.Completed,
                     Status = "Too short",
-                    LosslessScore = 50
+                    LosslessScore = 50,
+                    Verdict = "File too short (<5s) for reliable analysis."
                 };
             }
 
             if (ct.IsCancellationRequested)
                 return result with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = "Cancelled" };
 
-            var (cutoff, spectrum, spectrogram) = _cutoffDetector.DetectFull(samples, format.SampleRate);
+            var (cutoff, cutoffSlope, spectrum, spectrogram) = _cutoffDetector.DetectFull(samples, format.SampleRate);
 
             if (ct.IsCancellationRequested)
                 return result with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = "Cancelled" };
@@ -76,20 +80,41 @@ public class AudioAnalyzer
 
             var (dr, truePeak, clippingPercent) = _drMeter.Analyze(samples, format.SampleRate);
 
+            // Bit depth validation
+            var (bitSuspicious, bitVerdict, noiseFloor) = _bitDepthValidator.Validate(
+                samples, format.BitsPerSample, format.SampleRate);
+
+            // Upscale detection
+            var (isUpscale, upscaleVerdict, maxHfDb) = _upscaleDetector.Detect(
+                spectrum, format.SampleRate);
+
             result = result with
             {
                 CutoffFrequency = Math.Round(cutoff, 0),
+                CutoffSlope = Math.Round(cutoffSlope, 2),
                 HasArtifacts = hasArtifacts,
                 ArtifactLevel = artifactLevel,
                 DynamicRange = Math.Round(dr, 1),
                 TruePeak = Math.Round(truePeak, 1),
                 ClippingPercent = Math.Round(clippingPercent, 2),
                 AveragedSpectrum = spectrum,
-                SpectrogramData = spectrogram
+                SpectrogramData = spectrogram,
+                BitDepthSuspicious = bitSuspicious,
+                NoiseFloorDb = Math.Round(noiseFloor, 1),
+                BitDepthVerdict = bitVerdict,
+                IsUpscale = isUpscale,
+                MaxHfDb = Math.Round(maxHfDb, 1),
+                UpscaleVerdict = upscaleVerdict
             };
 
             result = _scoreCalculator.Calculate(result);
-            return result with { AnalysisStatus = AnalysisStatus.Completed };
+            result = result with
+            {
+                Verdict = _verdictGenerator.Generate(result),
+                AnalysisStatus = AnalysisStatus.Completed
+            };
+
+            return result;
         }
         catch (Exception ex)
         {

@@ -237,6 +237,80 @@
                     </DataGridTextColumn.HeaderStyle>
                 </DataGridTextColumn>
 
+                <DataGridTemplateColumn Header="Bits" Width="50">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding BitDepthSuspicious, StringFormat={}{0}}"
+                                       HorizontalAlignment="Center"
+                                       FontSize="12">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding BitDepthSuspicious}" Value="True">
+                                                <Setter Property="Text" Value="⚠"/>
+                                                <Setter Property="Foreground" Value="#f9e2af"/>
+                                                <Setter Property="ToolTip" Value="Bit depth suspicious — check noise floor"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding BitDepthSuspicious}" Value="False">
+                                                <Setter Property="Text" Value="✓"/>
+                                                <Setter Property="Foreground" Value="#585b70"/>
+                                                <Setter Property="ToolTip" Value="Bit depth integrity confirmed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                    <DataGridTemplateColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#313244"/>
+                            <Setter Property="Foreground" Value="#a6adc8"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="BorderBrush" Value="#45475a"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="Padding" Value="10,8"/>
+                            <Setter Property="ToolTip" Value="Bit-depth integrity&#x0a;⚠ = padded container detected&#x0a;✓ = bit depth matches noise floor"/>
+                        </Style>
+                    </DataGridTemplateColumn.HeaderStyle>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn Header="HiRes" Width="55">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock HorizontalAlignment="Center" FontSize="12">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsUpscale}" Value="True">
+                                                <Setter Property="Text" Value="⚠"/>
+                                                <Setter Property="Foreground" Value="#f9e2af"/>
+                                                <Setter Property="ToolTip" Value="Hi-Res upscale suspected — no HF content"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsUpscale}" Value="False">
+                                                <Setter Property="Text" Value="—"/>
+                                                <Setter Property="Foreground" Value="#585b70"/>
+                                                <Setter Property="ToolTip" Value="Sample rate authentic or standard (no upscale check needed)"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                    <DataGridTemplateColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#313244"/>
+                            <Setter Property="Foreground" Value="#a6adc8"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="BorderBrush" Value="#45475a"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="Padding" Value="10,8"/>
+                            <Setter Property="ToolTip" Value="Hi-Res authenticity&#x0a;⚠ = likely upscale from 44.1/48kHz&#x0a;— = standard SR or authentic"/>
+                        </Style>
+                    </DataGridTemplateColumn.HeaderStyle>
+                </DataGridTemplateColumn>
+
                 <DataGridTemplateColumn Header="Score" Width="70">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -261,7 +335,7 @@
 
                 <DataGridTextColumn Header="Status"
                                     Binding="{Binding StatusMessage}"
-                                    Width="150">
+                                    Width="140">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="Foreground">
@@ -270,6 +344,7 @@
                                              Converter="{StaticResource ScoreToColorConverter}"/>
                                 </Setter.Value>
                             </Setter>
+                            <Setter Property="ToolTip" Value="{Binding Verdict}"/>
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
