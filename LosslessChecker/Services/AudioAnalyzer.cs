@@ -65,9 +65,9 @@ public class AudioAnalyzer
                 return result with
                 {
                     AnalysisStatus = AnalysisStatus.Completed,
-                    Status = "Too short",
-                    LosslessScore = 50,
-                    Verdict = "File too short (<5s) for reliable analysis."
+                    // Status = "Too short",
+                    // LosslessScore = 50,
+                    // Verdict = "File too short (<5s) for reliable analysis."
                 };
             }
 
@@ -102,24 +102,24 @@ public class AudioAnalyzer
                 HasArtifacts = hasArtifacts,
                 ArtifactLevel = artifactLevel,
                 DynamicRange = Math.Round(dr, 1),
-                TruePeak = Math.Round(truePeak, 1),
+                // TruePeak = Math.Round(truePeak, 1),
                 ClippingPercent = Math.Round(clippingPercent, 2),
-                AveragedSpectrum = spectrum,
+                // AveragedSpectrum = spectrum,
                 SpectrogramFlat = spectrogram,
                 SpectrogramWidth = spectWidth,
                 SpectrogramHeight = spectHeight,
                 BitDepthSuspicious = bitSuspicious,
-                NoiseFloorDb = Math.Round(noiseFloor, 1),
-                BitDepthVerdict = bitVerdict,
+                // NoiseFloorDb = Math.Round(noiseFloor, 1),
+                // BitDepthVerdict = bitVerdict,
                 IsUpscale = isUpscale,
                 MaxHfDb = Math.Round(maxHfDb, 1),
-                UpscaleVerdict = upscaleVerdict
+                // UpscaleVerdict = upscaleVerdict
             };
 
-            result = _scoreCalculator.Calculate(result);
+            // result = _scoreCalculator.Calculate(result);
             result = result with
             {
-                Verdict = _verdictGenerator.Generate(result),
+                // Verdict = _verdictGenerator.Generate(result),
                 AnalysisStatus = AnalysisStatus.Completed
             };
 

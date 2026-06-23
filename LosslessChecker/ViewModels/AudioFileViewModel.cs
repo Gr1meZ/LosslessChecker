@@ -45,17 +45,17 @@ public partial class AudioFileViewModel : ObservableObject
         CutoffFrequency = result.CutoffFrequency;
         CutoffSlope = result.CutoffSlope;
         DynamicRange = result.DynamicRange;
-        TruePeak = result.TruePeak;
+        // TruePeak = result.TruePeak;
         ClippingPercent = result.ClippingPercent;
-        LosslessScore = result.LosslessScore;
-        StatusMessage = result.Status;
-        Verdict = result.Verdict;
+        // LosslessScore = result.LosslessScore;
+        // StatusMessage = result.Status;
+        // Verdict = result.Verdict;
         HasArtifacts = result.HasArtifacts;
         ArtifactLevel = result.ArtifactLevel;
         AnalysisStatus = result.AnalysisStatus;
         ErrorMessage = result.ErrorMessage ?? "";
         BitDepthSuspicious = result.BitDepthSuspicious;
-        NoiseFloorDb = result.NoiseFloorDb;
+        // NoiseFloorDb = result.NoiseFloorDb;
         IsUpscale = result.IsUpscale;
 
         if (result.SpectrogramFlat is { Length: > 0 })

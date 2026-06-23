@@ -68,20 +68,20 @@ public class VerdictGenerator
         }
 
         // Bit depth
-        if (result.BitDepthSuspicious)
-        {
-            lines.Add(result.BitDepthVerdict);
-        }
+        // if (result.BitDepthSuspicious)
+        // {
+        //     lines.Add(result.BitDepthVerdict);
+        // }
 
         // Upscale
-        if (result.IsUpscale)
-        {
-            lines.Add(result.UpscaleVerdict);
-        }
+        // if (result.IsUpscale)
+        // {
+        //     lines.Add(result.UpscaleVerdict);
+        // }
 
         // Material quality assessment
-        if (result.TruePeak > 0)
-            lines.Add($"True Peak at +{result.TruePeak:F1} dBTP — intersample peaks exceed 0 dBFS. May clip on some DACs.");
+        // if (result.TruePeak > 0)
+        //     lines.Add($"True Peak at +{result.TruePeak:F1} dBTP — intersample peaks exceed 0 dBFS. May clip on some DACs.");
 
         return string.Join(" ", lines);
     }

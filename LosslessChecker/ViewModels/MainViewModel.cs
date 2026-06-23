@@ -142,10 +142,10 @@ public partial class MainViewModel : ObservableObject
 
                         if (result.AnalysisStatus == AnalysisStatus.Error)
                             ErrorCount++;
-                        else if (result.LosslessScore < 55)
-                            FakeCount++;
-                        else if (result.Format.StartsWith("MP3") && result.LosslessScore >= 55)
-                            GoodMp3Count++;
+                        // else if (result.LosslessScore < 55)
+                            // FakeCount++;
+                        // else if (result.Format.StartsWith("MP3") && result.LosslessScore >= 55)
+                            // GoodMp3Count++;
 
                         if (done % 5 == 0 || done == TotalFiles)
                             UpdateSummary();

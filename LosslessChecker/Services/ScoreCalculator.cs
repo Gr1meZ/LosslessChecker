@@ -118,6 +118,7 @@ public class ScoreCalculator
             _ => "Fake / Poor"
         };
 
-        return input with { LosslessScore = Math.Round(score, 1), Status = status };
+        // return input with { LosslessScore = Math.Round(score, 1), Status = status };
+        return input;
     }
 }
