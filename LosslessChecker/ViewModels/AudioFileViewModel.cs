@@ -45,7 +45,8 @@ public partial class AudioFileViewModel : ObservableObject
         CutoffFrequency = result.CutoffFrequency;
         CutoffSlope = result.CutoffSlope;
         DynamicRange = result.DynamicRange;
-        // TruePeak = result.TruePeak;
+        //     SamplePeakDb = result.SamplePeakDb;
+        //     TruePeakDb = result.TruePeakDb;
         ClippingPercent = result.ClippingPercent;
         // LosslessScore = result.LosslessScore;
         // StatusMessage = result.Status;

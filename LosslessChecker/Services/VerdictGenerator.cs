@@ -80,8 +80,8 @@ public class VerdictGenerator
         // }
 
         // Material quality assessment
-        // if (result.TruePeak > 0)
-        //     lines.Add($"True Peak at +{result.TruePeak:F1} dBTP — intersample peaks exceed 0 dBFS. May clip on some DACs.");
+            // if (result.TruePeakDb > 0)
+            //     lines.Add($"True Peak at +{result.TruePeakDb:F1} dBTP — intersample peaks exceed 0 dBFS. May clip on some DACs.");
 
         return string.Join(" ", lines);
     }

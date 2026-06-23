@@ -31,6 +31,11 @@ public partial class MainWindow : Window
                 double canvasHeight = 220;
                 double canvasWidth = 600;
                 double nyquist = 22050;
+                // Use actual Nyquist if the file has a different sample rate
+                if (selected.Format.Contains("48kHz")) nyquist = 24000;
+                else if (selected.Format.Contains("96kHz")) nyquist = 48000;
+                else if (selected.Format.Contains("88")) nyquist = 44100;
+                else if (selected.Format.Contains("192kHz")) nyquist = 96000;
                 double cutoffRatio = nyquist > 0 ? selected.CutoffFrequency / nyquist : 1.0;
 
                 double cutoffY = (1.0 - cutoffRatio) * canvasHeight;
