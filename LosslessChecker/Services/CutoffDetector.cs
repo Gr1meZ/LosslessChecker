@@ -91,6 +91,7 @@ public class CutoffDetector
     private static (double cutoff, double cutoffSlope) FindCutoff(
         double[] avgMagnitudes, double nyquist, int sampleRate)
     {
+        // Find reference peak in low frequencies (0-4 kHz)
         int lowBandEnd = avgMagnitudes.Length / 6;
         double peakMag = 0;
         for (int i = 0; i < lowBandEnd; i++)
@@ -99,27 +100,11 @@ public class CutoffDetector
         if (peakMag <= 0)
             return (nyquist, 0);
 
-        int highStart = avgMagnitudes.Length / 3;
-        var highBandMags = new List<double>();
-        for (int i = highStart; i < avgMagnitudes.Length; i++)
-            if (avgMagnitudes[i] > 1e-10)
-                highBandMags.Add(avgMagnitudes[i]);
-
-        if (highBandMags.Count < 10)
-            return (nyquist, 0);
-
-        highBandMags.Sort();
-        int noiseCount = Math.Max(1, highBandMags.Count / 5);
-        double noiseFloor = 0;
-        for (int i = 0; i < noiseCount; i++)
-            noiseFloor += highBandMags[i];
-        noiseFloor /= noiseCount;
-
-        double minThresholdDb = sampleRate >= 88200 ? -65.0 : -60.0;
-        double thresholdDb = Math.Max(minThresholdDb,
-            20.0 * Math.Log10(Math.Max(noiseFloor, 1e-10) / peakMag) + 12.0);
+        // Fixed relative threshold: signal must be within -60 dB (standard) or -65 dB (Hi-Res) of peak
+        double thresholdDb = sampleRate >= 88200 ? -65.0 : -60.0;
         double thresholdMag = peakMag * Math.Pow(10, thresholdDb / 20.0);
 
+        // Search from Nyquist down through upper 2/3 of spectrum
         int startBin = avgMagnitudes.Length / 3;
         int cutoffBin = avgMagnitudes.Length - 1;
         for (int bin = avgMagnitudes.Length - 1; bin >= startBin; bin--)
