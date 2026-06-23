@@ -9,35 +9,49 @@ public class ScoreCalculator
         var nyquist = input.SampleRate / 2.0;
         double cutoffRatio = nyquist > 0 ? input.CutoffFrequency / nyquist : 1.0;
 
-        // Cutoff penalty — sample-rate-aware
-        // For Hi-Res (≥88.2kHz): content rarely reaches Nyquist. Use absolute threshold.
-        // For standard rates (44.1/48kHz): use ratio-to-Nyquist as before.
+        // Cutoff penalty — sample-rate-aware with anti-aliasing filter awareness.
+        // Real ADCs have gradual anti-aliasing rolloff before Nyquist.
+        // Penalties target known lossy encoder cutoff frequencies:
+        //   128 kbps MP3: ~16 kHz,   192 kbps: ~18 kHz,   320 kbps: ~20 kHz
         double cutoffPenalty;
         if (input.SampleRate >= 88200)
         {
-            // Hi-Res: expect content at least above 20 kHz (human hearing limit)
-            // Content above 20 kHz = genuine Hi-Res. Below = suspicious.
+            // Hi-Res: expect content above 20 kHz (human hearing limit)
             cutoffPenalty = input.CutoffFrequency switch
             {
-                >= 30000 => 0,     // Excellent: content well into ultrasonic
-                >= 23000 => 2,     // Good: typical Hi-Res recording
-                >= 20000 => 5,     // OK: just above audible range
-                >= 16000 => 20,    // Suspicious: only CD-quality bandwidth
-                >= 12000 => 35,    // Likely upscale or poor source
-                _ => 45            // Severe: very limited bandwidth
+                >= 30000 => 0,
+                >= 23000 => 2,
+                >= 20000 => 5,
+                >= 16000 => 20,
+                >= 12000 => 35,
+                _ => 45
+            };
+        }
+        else if (input.SampleRate >= 44100)
+        {
+            // Standard rate: ADC anti-aliasing filter starts ~0.85-0.9 × Nyquist.
+            // Real lossy codec cutoffs are much lower.
+            cutoffPenalty = input.CutoffFrequency switch
+            {
+                >= 20000 => 0,      // ADC rolloff or full bandwidth — no penalty
+                >= 18000 => 5,      // Very mild: could be ADC or 320kbps MP3
+                >= 16000 => 18,     // Moderate: 192-256 kbps lossy range
+                >= 14000 => 32,     // Heavy: 128-160 kbps MP3 range
+                >= 10000 => 45,     // Severe: 96-112 kbps
+                _ => 55             // Extreme: sub-96kbps
             };
         }
         else
         {
-            // Standard sample rate: use ratio to Nyquist
-            cutoffPenalty = cutoffRatio switch
+            // Low sample rates (22.05kHz, etc.)
+            double ratio = input.CutoffFrequency / Math.Max(nyquist, 1);
+            cutoffPenalty = ratio switch
             {
                 >= 0.90 => 0,
-                >= 0.82 => 3,
-                >= 0.72 => 12,
-                >= 0.60 => 25,
-                >= 0.45 => 40,
-                _ => 50
+                >= 0.80 => 5,
+                >= 0.65 => 18,
+                >= 0.50 => 32,
+                _ => 45
             };
         }
 
@@ -79,11 +93,8 @@ public class ScoreCalculator
 
         // Brickwall slope: if cutoff slope is extremely steep (< -18 dB/octave),
         // it suggests a hard low-pass filter (encoder artifact), not natural rolloff.
-        // Only apply for standard rates where we expect gradual HF decay.
         double slopePenalty = 0;
-        if (input.SampleRate < 88200 && input.CutoffSlope < -18 && cutoffRatio < 0.90)
-            slopePenalty = 8;
-        else if (input.SampleRate >= 88200 && input.CutoffSlope < -18 && input.CutoffFrequency < 20000)
+        if (input.CutoffSlope < -18 && input.CutoffFrequency < 20000)
             slopePenalty = 8;
 
         // Bit depth padding penalty
