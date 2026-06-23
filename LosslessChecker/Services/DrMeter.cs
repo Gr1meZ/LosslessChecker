@@ -130,7 +130,8 @@ public class DrMeter
         // TT DR Meter: sort by LINEAR RMS, take top 20%, average linear RMS, then convert to dB
         blockRms.Sort((a, b) => b.CompareTo(a));
         int topCount = Math.Max(1, (int)(blockRms.Count * TopPercentile));
-        double dbLoud = 20.0 * Math.Log10(Math.Max(blockRms.Take(topCount).Average(), 1e-10));
+        double avgTopRms = blockRms.Take(topCount).Average();
+        double dbLoud = 20.0 * Math.Log10(Math.Max(avgTopRms, 1e-10));
 
         double totalSumSq = 0;
         for (int i = 0; i < samples.Length; i++)
@@ -139,6 +140,13 @@ public class DrMeter
         double dbOverall = 20.0 * Math.Log10(Math.Max(overallRms, 1e-10));
 
         double dr = dbLoud - dbOverall;
+        try
+        {
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lossless_dr_debug.log"),
+                $"{DateTime.Now:HH:mm:ss.fff} DR: top20avgRMS={avgTopRms:F6} dbLoud={dbLoud:F2} overallRMS={overallRms:F6} dbOverall={dbOverall:F2} dr={dr:F2} topCount={topCount}/{blockRms.Count} nsamples={samples.Length}{Environment.NewLine}");
+        }
+        catch { }
         return (dr, peakDb, clipPercent);
     }
 }
