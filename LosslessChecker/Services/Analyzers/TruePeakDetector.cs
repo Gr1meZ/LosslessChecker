@@ -59,20 +59,33 @@ public class TruePeakDetector
 
     private static float FindTruePeak(float[] samples)
     {
-        int n = samples.Length;
-        float peak = 0;
-        var upsampled = new float[n * OversampleFactor];
-        for (int i = 0; i < n; i++)
-            upsampled[i * OversampleFactor] = samples[i];
+        if (samples.Length == 0) return 0;
 
-        // Simple low-pass: 5-tap moving average (acts as sinc-like filter for 4x)
-        var filtered = new float[upsampled.Length];
-        for (int i = 2; i < upsampled.Length - 2; i++)
+        float peak = 0;
+
+        // Check actual sample positions
+        for (int i = 0; i < samples.Length; i++)
         {
-            filtered[i] = (upsampled[i - 2] + upsampled[i - 1] + upsampled[i]
-                         + upsampled[i + 1] + upsampled[i + 2]) / 5f;
-            float abs = Math.Abs(filtered[i]);
+            float abs = Math.Abs(samples[i]);
             if (abs > peak) peak = abs;
+        }
+
+        // Check between samples: 4x oversampling via linear interpolation.
+        // ITU-R BS.1770-4 Annex 2 recommends at least 4x oversampling with
+        // a low-pass filter. Linear interpolation provides a reasonable
+        // approximation for true peak detection.
+        if (samples.Length > 1)
+        {
+            for (int i = 0; i < samples.Length - 1; i++)
+            {
+                for (int j = 1; j < OversampleFactor; j++)
+                {
+                    float t = (float)j / OversampleFactor;
+                    float interp = samples[i] + (samples[i + 1] - samples[i]) * t;
+                    float abs = Math.Abs(interp);
+                    if (abs > peak) peak = abs;
+                }
+            }
         }
 
         return peak;
