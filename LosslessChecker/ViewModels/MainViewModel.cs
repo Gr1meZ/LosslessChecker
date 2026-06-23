@@ -34,10 +34,13 @@ public partial class MainViewModel : ObservableObject
     private string _summaryText = "Ready";
 
     [ObservableProperty]
-    private int _fakeCount;
+    private int _keepCount;
 
     [ObservableProperty]
-    private int _goodMp3Count;
+    private int _investigateCount;
+
+    [ObservableProperty]
+    private int _replaceCount;
 
     [ObservableProperty]
     private int _errorCount;
@@ -70,7 +73,7 @@ public partial class MainViewModel : ObservableObject
         }
 
         SelectedCutoffFrequency = selected.CutoffFrequency;
-        SelectedNyquist = 22050;
+        SelectedNyquist = selected.SampleRate > 0 ? selected.SampleRate / 2.0 : 22050;
         SpectrumTitle = selected.FileName;
         IsSpectrumVisible = true;
     }
@@ -101,8 +104,9 @@ public partial class MainViewModel : ObservableObject
         IsProcessing = true;
         ProcessedFiles = 0;
         ErrorCount = 0;
-        FakeCount = 0;
-        GoodMp3Count = 0;
+        KeepCount = 0;
+        InvestigateCount = 0;
+        ReplaceCount = 0;
         Files.Clear();
 
         _cts = new CancellationTokenSource();
@@ -142,10 +146,12 @@ public partial class MainViewModel : ObservableObject
 
                         if (result.AnalysisStatus == AnalysisStatus.Error)
                             ErrorCount++;
-                        // else if (result.LosslessScore < 55)
-                            // FakeCount++;
-                        // else if (result.Format.StartsWith("MP3") && result.LosslessScore >= 55)
-                            // GoodMp3Count++;
+                        else if (result.Decision.StartsWith("KEEP"))
+                            KeepCount++;
+                        else if (result.Decision == "INVESTIGATE")
+                            InvestigateCount++;
+                        else if (result.Decision == "REPLACE")
+                            ReplaceCount++;
 
                         if (done % 5 == 0 || done == TotalFiles)
                             UpdateSummary();
@@ -169,7 +175,6 @@ public partial class MainViewModel : ObservableObject
 
     private void UpdateSummary()
     {
-        SummaryText =
-            $"Ready: {ProcessedFiles}/{TotalFiles} | Fake: {FakeCount} | Good MP3: {GoodMp3Count} | Errors: {ErrorCount}";
+        SummaryText = $"Ready: {ProcessedFiles}/{TotalFiles} | KEEP: {KeepCount} | INVESTIGATE: {InvestigateCount} | REPLACE: {ReplaceCount} | Errors: {ErrorCount}";
     }
 }

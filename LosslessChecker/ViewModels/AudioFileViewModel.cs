@@ -10,25 +10,32 @@ public partial class AudioFileViewModel : ObservableObject
     [ObservableProperty] private string _fileName = "";
     [ObservableProperty] private string _format = "";
     [ObservableProperty] private double _cutoffFrequency;
-    [ObservableProperty] private double _cutoffSlope;
     [ObservableProperty] private double _dynamicRange;
-    [ObservableProperty] private double _truePeak;
+    [ObservableProperty] private double _samplePeakDb;
+    [ObservableProperty] private double _truePeakDb;
     [ObservableProperty] private double _clippingPercent;
-    [ObservableProperty] private double _losslessScore;
-    [ObservableProperty] private string _statusMessage = "";
-    [ObservableProperty] private string _verdict = "";
+    [ObservableProperty] private string _authenticity = "";
+    [ObservableProperty] private int _qualityScore;
+    [ObservableProperty] private string _decision = "";
+    [ObservableProperty] private string _artifactLevel = "None";
     [ObservableProperty] private bool _hasArtifacts;
-    [ObservableProperty] private string _artifactLevel = "";
     [ObservableProperty] private AnalysisStatus _analysisStatus = AnalysisStatus.Pending;
     [ObservableProperty] private string _errorMessage = "";
     [ObservableProperty] private bool _bitDepthSuspicious;
-    [ObservableProperty] private double _noiseFloorDb;
     [ObservableProperty] private bool _isUpscale;
+    [ObservableProperty] private double _correlation = 1.0;
+    [ObservableProperty] private double _dcOffsetL;
+    [ObservableProperty] private double _dcOffsetR;
+    [ObservableProperty] private double _integratedLufs;
+    [ObservableProperty] private int _sampleRate;
+    [ObservableProperty] private int _bitDepth;
+    [ObservableProperty] private int _channels;
+    [ObservableProperty] private string _structuredReport = "";
+    [ObservableProperty] private string _encoderMatch = "";
     [ObservableProperty] private WriteableBitmap? _spectrogramBitmap;
 
     public string FilePath { get; }
 
-    // Flat spectrogram data, deleted after bitmap built
     private byte[]? _rawSpectro;
     private int _spectroWidth, _spectroHeight;
 
@@ -38,32 +45,39 @@ public partial class AudioFileViewModel : ObservableObject
         _fileName = fileInfo.FileName;
     }
 
-    public void ApplyResult(AnalysisResult result)
+    public void ApplyResult(AnalysisResult r)
     {
-        FileName = result.FileName;
-        Format = result.Format;
-        CutoffFrequency = result.CutoffFrequency;
-        CutoffSlope = result.CutoffSlope;
-        DynamicRange = result.DynamicRange;
-        //     SamplePeakDb = result.SamplePeakDb;
-        //     TruePeakDb = result.TruePeakDb;
-        ClippingPercent = result.ClippingPercent;
-        // LosslessScore = result.LosslessScore;
-        // StatusMessage = result.Status;
-        // Verdict = result.Verdict;
-        HasArtifacts = result.HasArtifacts;
-        ArtifactLevel = result.ArtifactLevel;
-        AnalysisStatus = result.AnalysisStatus;
-        ErrorMessage = result.ErrorMessage ?? "";
-        BitDepthSuspicious = result.BitDepthSuspicious;
-        // NoiseFloorDb = result.NoiseFloorDb;
-        IsUpscale = result.IsUpscale;
+        FileName = r.FileName;
+        Format = r.Format;
+        CutoffFrequency = r.CutoffFrequency;
+        DynamicRange = r.DynamicRange;
+        SamplePeakDb = r.SamplePeakDb;
+        TruePeakDb = r.TruePeakDb;
+        ClippingPercent = r.ClippingPercent;
+        Authenticity = r.Authenticity;
+        QualityScore = r.QualityScore;
+        Decision = r.Decision;
+        ArtifactLevel = r.ArtifactLevel;
+        HasArtifacts = r.HasArtifacts;
+        AnalysisStatus = r.AnalysisStatus;
+        ErrorMessage = r.ErrorMessage ?? "";
+        BitDepthSuspicious = r.BitDepthSuspicious;
+        IsUpscale = r.IsUpscale;
+        Correlation = r.Correlation;
+        DcOffsetL = r.DcOffsetL;
+        DcOffsetR = r.DcOffsetR;
+        IntegratedLufs = r.IntegratedLufs;
+        SampleRate = r.SampleRate;
+        BitDepth = r.BitDepth;
+        Channels = r.Channels;
+        StructuredReport = r.StructuredReport;
+        EncoderMatch = r.EncoderMatch;
 
-        if (result.SpectrogramFlat is { Length: > 0 })
+        if (r.SpectrogramFlat is { Length: > 0 })
         {
-            _rawSpectro = result.SpectrogramFlat;
-            _spectroWidth = result.SpectrogramWidth;
-            _spectroHeight = result.SpectrogramHeight;
+            _rawSpectro = r.SpectrogramFlat;
+            _spectroWidth = r.SpectrogramWidth;
+            _spectroHeight = r.SpectrogramHeight;
         }
     }
 
@@ -94,7 +108,7 @@ public partial class AudioFileViewModel : ObservableObject
         bmp.Unlock();
 
         SpectrogramBitmap = bmp;
-        _rawSpectro = null; // free the 75 KB
+        _rawSpectro = null;
         return bmp;
     }
 
