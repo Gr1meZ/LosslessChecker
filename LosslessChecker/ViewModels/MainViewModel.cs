@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LosslessChecker.Models;
@@ -45,9 +46,6 @@ public partial class MainViewModel : ObservableObject
     private AudioFileViewModel? _selectedFile;
 
     [ObservableProperty]
-    private System.Windows.Media.PointCollection? _selectedSpectrumPoints;
-
-    [ObservableProperty]
     private double _selectedCutoffFrequency;
 
     [ObservableProperty]
@@ -55,6 +53,36 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isSpectrumVisible;
+
+    [ObservableProperty]
+    private WriteableBitmap? _selectedSpectrogram;
+
+    [ObservableProperty]
+    private string _spectrumTitle = "";
+
+    public void OnSelectionChanged(AudioFileViewModel? selected)
+    {
+        SelectedFile = selected;
+        if (selected == null)
+        {
+            IsSpectrumVisible = false;
+            return;
+        }
+
+        SelectedCutoffFrequency = selected.CutoffFrequency;
+        SelectedNyquist = 22050;
+        SpectrumTitle = selected.FileName;
+
+        if (selected.SpectrogramBitmap != null)
+        {
+            SelectedSpectrogram = selected.SpectrogramBitmap;
+            IsSpectrumVisible = true;
+        }
+        else
+        {
+            IsSpectrumVisible = false;
+        }
+    }
 
     [RelayCommand]
     private async Task SelectFolder()
@@ -122,9 +150,9 @@ public partial class MainViewModel : ObservableObject
 
                         if (result.AnalysisStatus == AnalysisStatus.Error)
                             ErrorCount++;
-                        else if (result.LosslessScore < 60)
+                        else if (result.LosslessScore < 55)
                             FakeCount++;
-                        else if (result.Format.StartsWith("MP3") && result.LosslessScore >= 60)
+                        else if (result.Format.StartsWith("MP3") && result.LosslessScore >= 55)
                             GoodMp3Count++;
 
                         UpdateSummary();

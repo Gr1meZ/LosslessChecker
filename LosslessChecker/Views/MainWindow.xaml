@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:converters="clr-namespace:LosslessChecker.Converters"
         Title="LosslessChecker"
-        Height="750" Width="1100"
+        Height="800" Width="1150"
         WindowStartupLocation="CenterScreen"
         Background="#1e1e2e"
         Foreground="#cdd6f4">
@@ -100,6 +100,7 @@
                     <Setter Property="BorderBrush" Value="#45475a"/>
                     <Setter Property="BorderThickness" Value="0,0,0,1"/>
                     <Setter Property="Padding" Value="10,8"/>
+                    <Setter Property="ToolTipService.InitialShowDelay" Value="200"/>
                 </Style>
                 <Style TargetType="DataGridCell">
                     <Setter Property="BorderBrush" Value="Transparent"/>
@@ -127,31 +128,114 @@
                             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
                         </Style>
                     </DataGridTextColumn.ElementStyle>
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#313244"/>
+                            <Setter Property="Foreground" Value="#a6adc8"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="BorderBrush" Value="#45475a"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="Padding" Value="10,8"/>
+                            <Setter Property="ToolTip" Value="File name"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
                 </DataGridTextColumn>
 
                 <DataGridTextColumn Header="Format"
                                     Binding="{Binding Format}"
-                                    Width="130"/>
+                                    Width="130">
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#313244"/>
+                            <Setter Property="Foreground" Value="#a6adc8"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="BorderBrush" Value="#45475a"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="Padding" Value="10,8"/>
+                            <Setter Property="ToolTip" Value="Codec / sample rate / bit depth"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
+                </DataGridTextColumn>
 
-                <DataGridTextColumn Header="Cutoff (Hz)"
-                                    Binding="{Binding CutoffFrequency, StringFormat={}{0:F0}}"
-                                    Width="95"/>
+                <DataGridTextColumn Header="Cutoff"
+                                    Binding="{Binding CutoffFrequency, StringFormat={}{0:F0} Hz}"
+                                    Width="95">
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#313244"/>
+                            <Setter Property="Foreground" Value="#a6adc8"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="BorderBrush" Value="#45475a"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="Padding" Value="10,8"/>
+                            <Setter Property="ToolTip" Value="High-frequency cutoff (Hz)&#x0a;Ideal: 93%+ of Nyquist&#x0a;Acceptable: 85-93%&#x0a;Suspicious: below 85%"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
+                </DataGridTextColumn>
 
-                <DataGridTextColumn Header="DR (dB)"
-                                    Binding="{Binding DynamicRange, StringFormat={}{0:F1}}"
-                                    Width="75"/>
+                <DataGridTextColumn Header="DR"
+                                    Binding="{Binding DynamicRange, StringFormat={}{0:F1} dB}"
+                                    Width="70">
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#313244"/>
+                            <Setter Property="Foreground" Value="#a6adc8"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="BorderBrush" Value="#45475a"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="Padding" Value="10,8"/>
+                            <Setter Property="ToolTip" Value="Dynamic Range (TT DR Meter)&#x0a;Excellent: 12+ dB&#x0a;Good: 9-12 dB&#x0a;Average: 7-9 dB&#x0a;Poor: below 7 dB"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
+                </DataGridTextColumn>
 
-                <DataGridTextColumn Header="TPeak"
+                <DataGridTextColumn Header="Peak"
                                     Binding="{Binding TruePeak, StringFormat={}{0:F1}}"
-                                    Width="70"/>
+                                    Width="60">
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#313244"/>
+                            <Setter Property="Foreground" Value="#a6adc8"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="BorderBrush" Value="#45475a"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="Padding" Value="10,8"/>
+                            <Setter Property="ToolTip" Value="True Peak (dBTP)&#x0a;0 dBFS = digital ceiling&#x0a;Negative values = headroom"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
+                </DataGridTextColumn>
 
                 <DataGridTextColumn Header="Clip%"
                                     Binding="{Binding ClippingPercent, StringFormat={}{0:F2}}"
-                                    Width="65"/>
+                                    Width="60">
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#313244"/>
+                            <Setter Property="Foreground" Value="#a6adc8"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="BorderBrush" Value="#45475a"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="Padding" Value="10,8"/>
+                            <Setter Property="ToolTip" Value="Clipped samples (%)&#x0a;Ideal: 0%&#x0a;Minor: under 2%&#x0a;Heavy: over 5%"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
+                </DataGridTextColumn>
 
                 <DataGridTextColumn Header="Artifacts"
                                     Binding="{Binding ArtifactLevel}"
-                                    Width="85"/>
+                                    Width="80">
+                    <DataGridTextColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#313244"/>
+                            <Setter Property="Foreground" Value="#a6adc8"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="BorderBrush" Value="#45475a"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="Padding" Value="10,8"/>
+                            <Setter Property="ToolTip" Value="MP3 encoder artifacts detected above cutoff&#x0a;None: clean&#x0a;Weak/Medium/Strong: lossy source"/>
+                        </Style>
+                    </DataGridTextColumn.HeaderStyle>
+                </DataGridTextColumn>
 
                 <DataGridTemplateColumn Header="Score" Width="70">
                     <DataGridTemplateColumn.CellTemplate>
@@ -162,11 +246,22 @@
                                        HorizontalAlignment="Center"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
+                    <DataGridTemplateColumn.HeaderStyle>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#313244"/>
+                            <Setter Property="Foreground" Value="#a6adc8"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="BorderBrush" Value="#45475a"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="Padding" Value="10,8"/>
+                            <Setter Property="ToolTip" Value="Lossless Score (weighted)&#x0a;90-100: Lossless/Excellent&#x0a;75-89: Lossless/Good&#x0a;55-74: Suspicious&#x0a;0-54: Fake/Poor"/>
+                        </Style>
+                    </DataGridTemplateColumn.HeaderStyle>
                 </DataGridTemplateColumn>
 
                 <DataGridTextColumn Header="Status"
                                     Binding="{Binding StatusMessage}"
-                                    Width="140">
+                                    Width="150">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="Foreground">
@@ -181,48 +276,87 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <!-- Spectrum panel -->
+        <!-- Spectrogram panel -->
         <Border Grid.Row="2"
                 CornerRadius="8"
                 Background="#242438"
                 Padding="12,10"
                 Margin="0,8,0,0"
                 Visibility="{Binding IsSpectrumVisible, Converter={StaticResource BoolToVis}}"
-                Height="240">
+                Height="260">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
+                <!-- Header + cutoff label -->
                 <Grid Grid.Row="0" Margin="0,0,0,4">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="{Binding SelectedFile.FileName, StringFormat='Spectrum: {0}'}"
-                               Foreground="#a6adc8" FontSize="12"/>
-                    <TextBlock Grid.Column="1"
-                               Foreground="#f38ba8" FontSize="11">
-                        <Run Text="Cutoff: "/>
-                        <Run Text="{Binding SelectedCutoffFrequency, StringFormat={}{0:F0}}"/>
-                        <Run Text=" Hz"/>
-                    </TextBlock>
+                    <TextBlock Text="{Binding SpectrumTitle, StringFormat='Spectrogram: {0}'}"
+                               Foreground="#a6adc8" FontSize="12"
+                               TextTrimming="CharacterEllipsis"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <TextBlock Foreground="#f38ba8" FontSize="11" Margin="0,0,12,0">
+                            <Run Text="Cutoff: "/>
+                            <Run Text="{Binding SelectedCutoffFrequency, StringFormat={}{0:F0}}"/>
+                            <Run Text=" Hz"/>
+                        </TextBlock>
+                        <TextBlock Foreground="#a6adc8" FontSize="10"
+                                   ToolTip="Spectrogram: time (left→right) vs frequency (bottom=0 Hz, top=Nyquist). Brightness = loudness. Pink dashed line = detected cutoff.">
+                            <Run Text="ⓘ"/>
+                        </TextBlock>
+                    </StackPanel>
                 </Grid>
 
-                <Canvas Grid.Row="1" x:Name="SpectrumCanvas"
-                        Width="500" Height="190"
-                        Background="#1e1e2e"
-                        ClipToBounds="True">
-                    <Polyline x:Name="SpectrumLine"
-                              Stroke="#89b4fa"
-                              StrokeThickness="1.2"/>
-                    <Line x:Name="CutoffLine"
-                          Y1="0" Y2="190"
-                          Stroke="#f38ba8"
-                          StrokeThickness="1.5"
-                          StrokeDashArray="4,2"/>
-                </Canvas>
+                <!-- Spectrogram image + cutoff overlay -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Canvas Grid.Column="0"
+                            Width="600" Height="220"
+                            Background="#1e1e2e"
+                            ClipToBounds="True">
+                        <Image x:Name="SpectrogramImage" Stretch="Fill"
+                               Width="600" Height="220"/>
+                        <Line x:Name="CutoffLine"
+                              Y1="0" Y2="220"
+                              Stroke="#f38ba8"
+                              StrokeThickness="1.5"
+                              StrokeDashArray="4,2"/>
+                    </Canvas>
+
+                    <!-- Colorbar legend -->
+                    <Grid Grid.Column="1" Width="20" Margin="6,0,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Text="max"
+                                   Foreground="#585b70" FontSize="9"
+                                   HorizontalAlignment="Center"/>
+                        <Rectangle Grid.Row="1" Width="18" Margin="1,2,1,2">
+                            <Rectangle.Fill>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#FCE116" Offset="0"/>
+                                    <GradientStop Color="#6ECC50" Offset="0.5"/>
+                                    <GradientStop Color="#423186" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Rectangle.Fill>
+                        </Rectangle>
+                        <TextBlock Grid.Row="2" Text="min"
+                                   Foreground="#585b70" FontSize="9"
+                                   HorizontalAlignment="Center"/>
+                    </Grid>
+                </Grid>
             </Grid>
         </Border>
 

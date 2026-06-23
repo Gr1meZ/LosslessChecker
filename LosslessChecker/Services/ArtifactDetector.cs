@@ -20,8 +20,8 @@ public class ArtifactDetector
         var fft = new Fft(FftSize);
         var window = Window.Hann(FftSize);
 
-        double totalSpectralFlatness = 0;
-        double totalTransitionSharpness = 0;
+        double totalFlatness = 0;
+        double totalSlope = 0;
         int frameCount = 0;
 
         for (int pos = 0; pos + FftSize <= samples.Length; pos += HopSize)
@@ -42,9 +42,10 @@ public class ArtifactDetector
             for (int i = 0; i < FftSize / 2; i++)
                 mags[i] = Math.Sqrt(real[i] * real[i] + imag[i] * imag[i]);
 
+            // Wider analysis band: 80 bins above cutoff (~864 Hz)
             int aboveStart = cutoffBin;
-            int aboveEnd = Math.Min(cutoffBin + 20, mags.Length - 1);
-            if (aboveEnd > aboveStart)
+            int aboveEnd = Math.Min(cutoffBin + 80, mags.Length - 1);
+            if (aboveEnd > aboveStart + 10)
             {
                 double geomMean = 0, arithMean = 0;
                 int count = 0;
@@ -59,21 +60,30 @@ public class ArtifactDetector
                 {
                     geomMean = Math.Exp(geomMean / count);
                     arithMean /= count;
-                    totalSpectralFlatness += geomMean / arithMean;
+                    totalFlatness += geomMean / arithMean;
                 }
             }
 
-            if (cutoffBin >= 10 && cutoffBin < mags.Length - 10)
+            // Slope: linear regression over region around cutoff (±40 bins)
+            int slopeStart = Math.Max(1, cutoffBin - 40);
+            int slopeEnd = Math.Min(cutoffBin + 40, mags.Length - 1);
+            if (slopeEnd - slopeStart > 10)
             {
-                double before = 0, after = 0;
-                for (int i = cutoffBin - 5; i < cutoffBin; i++)
-                    before += mags[i];
-                for (int i = cutoffBin; i < cutoffBin + 5; i++)
-                    after += mags[i];
-                before /= 5;
-                after /= 5;
-                if (before > 0)
-                    totalTransitionSharpness += after / before;
+                double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+                int n = 0;
+                for (int i = slopeStart; i < slopeEnd; i++)
+                {
+                    double x = i;
+                    double y = Math.Max(mags[i], 1e-10);
+                    double yDb = 20.0 * Math.Log10(y);
+                    sumX += x;
+                    sumY += yDb;
+                    sumXY += x * yDb;
+                    sumX2 += x * x;
+                    n++;
+                }
+                double slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+                totalSlope += slope;
             }
 
             frameCount++;
@@ -82,14 +92,18 @@ public class ArtifactDetector
         if (frameCount == 0)
             return (false, "None");
 
-        double avgFlatness = totalSpectralFlatness / frameCount;
-        double avgTransition = totalTransitionSharpness / frameCount;
+        double avgFlatness = totalFlatness / frameCount;
+        double avgSlope = totalSlope / frameCount;
 
-        if (avgFlatness > 0.5 && avgTransition < 0.3)
+        // avgSlope is dB/bin. Negative = energy drops above cutoff.
+        // Steep drop (avgSlope < -0.08 dB/bin) = brickwall = MP3 artifact
+        // Flat (avgSlope > -0.02 dB/bin) = natural rolloff or noise
+
+        if (avgFlatness > 0.4 && avgSlope < -0.1)
             return (true, "Strong");
-        if (avgFlatness > 0.3 && avgTransition < 0.5)
+        if (avgFlatness > 0.25 && avgSlope < -0.06)
             return (true, "Medium");
-        if (avgFlatness > 0.15 || avgTransition < 0.7)
+        if (avgFlatness > 0.1 || avgSlope < -0.04)
             return (true, "Weak");
 
         return (false, "None");

@@ -11,7 +11,7 @@ public class DrMeter
         if (blockSize < 1 || samples.Length < blockSize)
             return (0, 0, 0);
 
-        var blockRms = new List<double>();
+        var blockDb = new List<double>();
         double truePeakLinear = double.MinValue;
         int clippedSamples = 0;
 
@@ -28,7 +28,9 @@ public class DrMeter
                     clippedSamples++;
                 sumSq += samples[i] * samples[i];
             }
-            blockRms.Add(Math.Sqrt(sumSq / len));
+            double rms = Math.Sqrt(sumSq / len);
+            double db = 20.0 * Math.Log10(Math.Max(rms, 1e-10));
+            blockDb.Add(db);
         }
 
         double truePeakDb = truePeakLinear > double.MinValue
@@ -36,13 +38,20 @@ public class DrMeter
             : 0.0;
         double clippingPercent = (double)clippedSamples / samples.Length * 100.0;
 
-        blockRms.Sort((a, b) => b.CompareTo(a));
-        int topCount = Math.Max(1, (int)(blockRms.Count * TopPercentile));
-        double topAvgRms = blockRms.Take(topCount).Average();
-        double overallRms = blockRms.Average();
+        // TT DR Meter: sort dB values, average top 20%, subtract overall dB
+        blockDb.Sort((a, b) => b.CompareTo(a));
+        int topCount = Math.Max(1, (int)(blockDb.Count * TopPercentile));
+        double dbLoud = blockDb.Take(topCount).Average();
 
-        double dr = 20.0 * Math.Log10(topAvgRms / Math.Max(overallRms, 1e-10));
+        // Overall RMS of entire signal
+        double totalSumSq = 0;
+        for (int i = 0; i < samples.Length; i++)
+            totalSumSq += samples[i] * samples[i];
+        double overallRms = Math.Sqrt(totalSumSq / samples.Length);
+        double dbOverall = 20.0 * Math.Log10(Math.Max(overallRms, 1e-10));
 
-        return (dr, truePeakDb, clippingPercent);
+        double dr = dbLoud - dbOverall;
+
+        return (Math.Round(dr, 1), Math.Round(truePeakDb, 1), Math.Round(clippingPercent, 2));
     }
 }
