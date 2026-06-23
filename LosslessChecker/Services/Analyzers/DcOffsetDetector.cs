@@ -8,8 +8,8 @@ public class DcOffsetDetector
 
     public DcOffsetResult Analyze(StereoBuffer buffer)
     {
-        double meanL = buffer.Left.Average();
-        double meanR = buffer.Right.Length > 0 ? buffer.Right.Average() : 0;
+        double meanL = buffer.Left.Length > 0 ? buffer.Left.Average() : 0;
+        double meanR = buffer.Right is { Length: > 0 } ? buffer.Right.Average() : 0;
 
         double dcOffsetL = Math.Round(meanL * 100.0, 4);
         double dcOffsetR = Math.Round(meanR * 100.0, 4);

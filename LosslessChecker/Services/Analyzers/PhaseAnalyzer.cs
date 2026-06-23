@@ -11,14 +11,15 @@ public class PhaseAnalyzer
         if (!buffer.IsStereo)
             return new PhaseResult(1.0, true);
 
+        int maxLen = Math.Min(buffer.Left.Length, buffer.Right.Length);
         var correlations = new List<double>();
-        for (int pos = 0; pos + BlockSize <= buffer.Length; pos += BlockSize)
+        for (int pos = 0; pos + BlockSize <= maxLen; pos += BlockSize)
         {
             double sumXY = 0, sumX2 = 0, sumY2 = 0;
             for (int i = pos; i < pos + BlockSize; i++)
             {
-                float x = buffer.Left[i];
-                float y = buffer.Right[i];
+                double x = buffer.Left[i];
+                double y = buffer.Right[i];
                 sumXY += x * y;
                 sumX2 += x * x;
                 sumY2 += y * y;
