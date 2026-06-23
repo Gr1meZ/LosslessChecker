@@ -26,7 +26,9 @@ public class LufsMeter
             int len = Math.Min(blockSize, buffer.Length - pos);
             for (int i = pos; i < pos + len; i++)
             {
-                double sample = (buffer.Left[i] + buffer.Right[i]) * 0.5;
+                double sample = buffer.IsStereo
+                    ? (buffer.Left[i] + buffer.Right[i]) * 0.5
+                    : buffer.Left[i];
                 var filtered = KWeightFilter(sample);
                 sumSq += filtered * filtered;
             }
