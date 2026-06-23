@@ -11,11 +11,12 @@ public class ScoreCalculator
 
         double cutoffPenalty = cutoffRatio switch
         {
-            >= 0.93 => 0,       // No penalty: cutoff within 7% of Nyquist
-            >= 0.85 => 8,       // Mild: possible gentle rolloff
-            >= 0.75 => 20,      // Moderate: suspicious for lossless
-            >= 0.65 => 35,      // Heavy: likely transcode
-            _ => 50             // Severe: very low-bitrate source
+            >= 0.90 => 0,       // No penalty: cutoff within 10% of Nyquist
+            >= 0.82 => 5,       // Very mild: gentle natural rolloff
+            >= 0.72 => 15,      // Mild: could be natural or mild encoding
+            >= 0.60 => 30,      // Moderate: suspicious for lossless
+            >= 0.45 => 45,      // Heavy: likely transcode
+            _ => 55             // Severe: very low-bitrate source
         };
 
         double artifactPenalty = input.ArtifactLevel switch

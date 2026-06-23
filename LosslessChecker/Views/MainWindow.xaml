@@ -315,25 +315,38 @@
                 <!-- Spectrogram image + cutoff overlay -->
                 <Grid Grid.Row="1">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <Canvas Grid.Column="0"
+                    <!-- Y-axis frequency labels -->
+                    <Canvas Grid.Column="0" Width="55" Height="220" Background="#1e1e2e">
+                        <TextBlock x:Name="FreqLabelNyq" Text="22k" Foreground="#585b70" FontSize="9" Canvas.Top="0" Canvas.Left="0"/>
+                        <TextBlock x:Name="FreqLabelMid" Text="11k" Foreground="#585b70" FontSize="9" Canvas.Top="105" Canvas.Left="0"/>
+                        <TextBlock x:Name="FreqLabel0" Text="0" Foreground="#585b70" FontSize="9" Canvas.Top="212" Canvas.Left="0"/>
+                    </Canvas>
+
+                    <Canvas Grid.Column="1"
                             Width="600" Height="220"
                             Background="#1e1e2e"
                             ClipToBounds="True">
                         <Image x:Name="SpectrogramImage" Stretch="Fill"
                                Width="600" Height="220"/>
+                        <!-- Horizontal cutoff line -->
                         <Line x:Name="CutoffLine"
-                              Y1="0" Y2="220"
+                              X1="0" X2="600"
                               Stroke="#f38ba8"
                               StrokeThickness="1.5"
                               StrokeDashArray="4,2"/>
+                        <TextBlock x:Name="CutoffLabel"
+                                   Foreground="#f38ba8"
+                                   FontSize="10"
+                                   Canvas.Left="4"/>
                     </Canvas>
 
                     <!-- Colorbar legend -->
-                    <Grid Grid.Column="1" Width="20" Margin="6,0,0,0">
+                    <Grid Grid.Column="2" Width="20" Margin="6,0,0,0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>

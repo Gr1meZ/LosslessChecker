@@ -118,8 +118,9 @@ public class CutoffDetector
             noiseFloor += highBandMags[i];
         noiseFloor /= noiseCount;
 
-        // Threshold: 12 dB above noise floor, or -48 dB from peak, whichever is higher
-        double thresholdDb = Math.Max(-48.0, 20.0 * Math.Log10(Math.Max(noiseFloor, 1e-10) / peakMag) + 12.0);
+        // Threshold: 12 dB above noise floor, or -60 dB from peak, whichever is higher
+        // -60 dB avoids false positives on natural high-frequency rolloff in genuine lossless
+        double thresholdDb = Math.Max(-60.0, 20.0 * Math.Log10(Math.Max(noiseFloor, 1e-10) / peakMag) + 12.0);
         double thresholdMag = peakMag * Math.Pow(10, thresholdDb / 20.0);
 
         // Search from Nyquist downwards
