@@ -72,16 +72,7 @@ public partial class MainViewModel : ObservableObject
         SelectedCutoffFrequency = selected.CutoffFrequency;
         SelectedNyquist = 22050;
         SpectrumTitle = selected.FileName;
-
-        if (selected.SpectrogramBitmap != null)
-        {
-            SelectedSpectrogram = selected.SpectrogramBitmap;
-            IsSpectrumVisible = true;
-        }
-        else
-        {
-            IsSpectrumVisible = false;
-        }
+        IsSpectrumVisible = true;
     }
 
     [RelayCommand]
