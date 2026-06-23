@@ -156,4 +156,43 @@ public class CutoffDetector
 
         return (cutoffHz, Math.Round(bestSlope, 2));
     }
+
+    public (string encoderMatch, string shelfType) ClassifyCutoff(
+        double cutoffHz, double cutoffSlope, int sampleRate)
+    {
+        var nyquist = sampleRate / 2.0;
+        double ratio = nyquist > 0 ? cutoffHz / nyquist : 1.0;
+
+        // Shelf type from slope
+        string shelfType = cutoffSlope switch
+        {
+            < -18 => "Brickwall",
+            < -10 => "Filtered",
+            _ => "Natural"
+        };
+
+        // Encoder mapping (absolute cutoff, not ratio)
+        string encoderMatch = cutoffHz switch
+        {
+            <= 16500 => "MP3 128-192 kbps",
+            <= 18500 => "MP3 192-256 kbps",
+            <= 20000 => "MP3 320 / AAC 256 kbps",
+            <= 21500 => "Possible LP filter",
+            _ => "None"
+        };
+
+        // Override: if ratio > 0.95, encoder match is None regardless
+        if (ratio >= 0.95)
+            encoderMatch = "None";
+
+        return (encoderMatch, shelfType);
+    }
+
+    public bool IsFakeHiRes(double cutoffHz, int sampleRate)
+    {
+        // Hi-Res = sample rate >= 88.2 kHz
+        if (sampleRate < 80000) return false;
+        // If cutoff is below 22 kHz on a Hi-Res file, it's a fake upscale
+        return cutoffHz < 22000;
+    }
 }
