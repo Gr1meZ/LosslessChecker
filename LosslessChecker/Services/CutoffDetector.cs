@@ -191,7 +191,7 @@ public class CutoffDetector
     public bool IsFakeHiRes(double cutoffHz, int sampleRate)
     {
         // Hi-Res = sample rate >= 88.2 kHz
-        if (sampleRate < 80000) return false;
+        if (sampleRate < 88200) return false;
         // If cutoff is below 22 kHz on a Hi-Res file, it's a fake upscale
         return cutoffHz < 22000;
     }
