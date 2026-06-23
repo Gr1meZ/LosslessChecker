@@ -9,20 +9,37 @@ public class ScoreCalculator
         var nyquist = input.SampleRate / 2.0;
         double cutoffRatio = nyquist > 0 ? input.CutoffFrequency / nyquist : 1.0;
 
-        // Cutoff penalty — based on ratio AND slope
+        // Cutoff penalty — sample-rate-aware
+        // For Hi-Res (≥88.2kHz): content rarely reaches Nyquist. Use absolute threshold.
+        // For standard rates (44.1/48kHz): use ratio-to-Nyquist as before.
         double cutoffPenalty;
-        if (cutoffRatio >= 0.90)
-            cutoffPenalty = 0;
-        else if (cutoffRatio >= 0.82)
-            cutoffPenalty = 3;  // Gentle rolloff — barely penalize
-        else if (cutoffRatio >= 0.72)
-            cutoffPenalty = 12; // Mild cutoff
-        else if (cutoffRatio >= 0.60)
-            cutoffPenalty = 25; // Moderate
-        else if (cutoffRatio >= 0.45)
-            cutoffPenalty = 40; // Heavy
+        if (input.SampleRate >= 88200)
+        {
+            // Hi-Res: expect content at least above 20 kHz (human hearing limit)
+            // Content above 20 kHz = genuine Hi-Res. Below = suspicious.
+            cutoffPenalty = input.CutoffFrequency switch
+            {
+                >= 30000 => 0,     // Excellent: content well into ultrasonic
+                >= 23000 => 2,     // Good: typical Hi-Res recording
+                >= 20000 => 5,     // OK: just above audible range
+                >= 16000 => 20,    // Suspicious: only CD-quality bandwidth
+                >= 12000 => 35,    // Likely upscale or poor source
+                _ => 45            // Severe: very limited bandwidth
+            };
+        }
         else
-            cutoffPenalty = 50; // Severe
+        {
+            // Standard sample rate: use ratio to Nyquist
+            cutoffPenalty = cutoffRatio switch
+            {
+                >= 0.90 => 0,
+                >= 0.82 => 3,
+                >= 0.72 => 12,
+                >= 0.60 => 25,
+                >= 0.45 => 40,
+                _ => 50
+            };
+        }
 
         // If slope is very steep (brickwall), increase penalty
         if (input.CutoffSlope < -20 && cutoffRatio < 0.85)
@@ -60,6 +77,15 @@ public class ScoreCalculator
         // Upscale penalty
         double upscalePenalty = input.IsUpscale ? 20 : 0;
 
+        // Brickwall slope: if cutoff slope is extremely steep (< -18 dB/octave),
+        // it suggests a hard low-pass filter (encoder artifact), not natural rolloff.
+        // Only apply for standard rates where we expect gradual HF decay.
+        double slopePenalty = 0;
+        if (input.SampleRate < 88200 && input.CutoffSlope < -18 && cutoffRatio < 0.90)
+            slopePenalty = 8;
+        else if (input.SampleRate >= 88200 && input.CutoffSlope < -18 && input.CutoffFrequency < 20000)
+            slopePenalty = 8;
+
         // Bit depth padding penalty
         double bitDepthPenalty = input.BitDepthSuspicious ? 10 : 0;
 
@@ -69,6 +95,7 @@ public class ScoreCalculator
             - clippingPenalty
             - drPenalty
             - upscalePenalty
+            - slopePenalty
             - bitDepthPenalty;
         score = Math.Max(0, Math.Min(100, score));
 

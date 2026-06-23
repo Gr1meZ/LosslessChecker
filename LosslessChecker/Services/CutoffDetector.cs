@@ -71,7 +71,7 @@ public class CutoffDetector
         for (int i = 0; i < avgMagnitudes.Length; i++)
             avgMagnitudes[i] /= frameCount;
 
-        var (cutoff, cutoffSlope) = FindCutoff(avgMagnitudes, nyquist);
+        var (cutoff, cutoffSlope) = FindCutoff(avgMagnitudes, nyquist, sampleRate);
 
         return (cutoff, cutoffSlope, avgMagnitudes, spectroFrames.ToArray());
     }
@@ -88,7 +88,8 @@ public class CutoffDetector
         return (cutoff, spectrum);
     }
 
-    private static (double cutoff, double cutoffSlope) FindCutoff(double[] avgMagnitudes, double nyquist)
+    private static (double cutoff, double cutoffSlope) FindCutoff(
+        double[] avgMagnitudes, double nyquist, int sampleRate)
     {
         int lowBandEnd = avgMagnitudes.Length / 6;
         double peakMag = 0;
@@ -114,7 +115,8 @@ public class CutoffDetector
             noiseFloor += highBandMags[i];
         noiseFloor /= noiseCount;
 
-        double thresholdDb = Math.Max(-60.0,
+        double minThresholdDb = sampleRate >= 88200 ? -65.0 : -60.0;
+        double thresholdDb = Math.Max(minThresholdDb,
             20.0 * Math.Log10(Math.Max(noiseFloor, 1e-10) / peakMag) + 12.0);
         double thresholdMag = peakMag * Math.Pow(10, thresholdDb / 20.0);
 

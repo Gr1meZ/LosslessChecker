@@ -36,11 +36,17 @@ public class AudioAnalyzer
             }
 
             var format = reader.WaveFormat;
+
+            // Read original format from file header (NAudio decodes to float, losing bit depth info)
+            var originalFmt = AudioFormatReader.ReadOriginal(fileInfo.FilePath);
+            int actualBitDepth = originalFmt?.BitDepth ?? format.BitsPerSample;
+            int actualSampleRate = originalFmt?.SampleRate ?? format.SampleRate;
+
             result = result with
             {
-                Format = GetFormatLabel(fileInfo.FilePath, format),
-                SampleRate = format.SampleRate,
-                BitDepth = format.BitsPerSample,
+                Format = GetFormatLabel(fileInfo.FilePath, format, actualBitDepth),
+                SampleRate = actualSampleRate,
+                BitDepth = actualBitDepth,
             };
 
             if (ct.IsCancellationRequested)
@@ -166,9 +172,9 @@ public class AudioAnalyzer
         };
     }
 
-    private static string GetFormatLabel(string filePath, WaveFormat format)
+    private static string GetFormatLabel(string filePath, WaveFormat format, int actualBitDepth)
     {
         var ext = Path.GetExtension(filePath).ToUpperInvariant().TrimStart('.');
-        return $"{ext} {format.SampleRate / 1000.0:F0}kHz/{format.BitsPerSample}bit";
+        return $"{ext} {format.SampleRate / 1000.0:F0}kHz/{actualBitDepth}bit";
     }
 }
