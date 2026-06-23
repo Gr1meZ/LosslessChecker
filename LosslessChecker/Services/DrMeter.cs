@@ -66,12 +66,9 @@ public class DrMeter
         int topCount = Math.Max(1, (int)(indexed.Count * TopPercentile));
         var top = indexed.Take(topCount).ToList();
 
-        // Average peaks and RMS in linear domain, then convert to dB
-        double avgPeakLinear = top.Average(x => x.peak);
-        double avgRmsLinear = top.Average(x => x.rms);
-
-        double avgPeakDb = 20.0 * Math.Log10(Math.Max(avgPeakLinear, 1e-10));
-        double avgRmsDb = 20.0 * Math.Log10(Math.Max(avgRmsLinear, 1e-10));
+        // Average peaks and RMS in dB domain (TT DR Meter spec: average dB of top 20%)
+        double avgPeakDb = top.Average(x => 20.0 * Math.Log10(Math.Max(x.peak, 1e-10)));
+        double avgRmsDb = top.Average(x => 20.0 * Math.Log10(Math.Max(x.rms, 1e-10)));
 
         double dr = avgPeakDb - avgRmsDb;
 
@@ -80,26 +77,19 @@ public class DrMeter
 
     public DrResult AnalyzeStereo(StereoBuffer buffer)
     {
-        // Compute per-channel DR
+        // Compute per-channel DR (foobar2000: DR is per-channel, official = min of L/R)
         var (drL, peakL, clipL) = AnalyzeChannel(buffer.Left, buffer.SampleRate);
         var (drR, peakR, clipR) = buffer.IsStereo
             ? AnalyzeChannel(buffer.Right, buffer.SampleRate)
-            : (0, 0, 0);
+            : (drL, peakL, clipL);
 
-        // Mono downmix for combined DR
-        int n = Math.Min(buffer.Left.Length, buffer.IsStereo ? buffer.Right.Length : buffer.Left.Length);
-        var mono = new float[n];
-        for (int i = 0; i < n; i++)
-            mono[i] = buffer.IsStereo
-                ? (buffer.Left[i] + buffer.Right[i]) * 0.5f
-                : buffer.Left[i];
-
-        var (dr, peakMono, clipMono) = AnalyzeChannel(mono, buffer.SampleRate);
+        // Official DR = minimum of left and right (matching foobar2000)
+        double overallDr = Math.Min(drL, drR);
         double overallPeak = Math.Max(peakL, peakR);
-        double overallClip = Math.Max(Math.Max(clipL, clipR), clipMono);
+        double overallClip = Math.Max(clipL, clipR);
 
         return new DrResult(
-            Math.Round(dr, 1), Math.Round(drL, 1), Math.Round(drR, 1),
+            Math.Round(overallDr, 1), Math.Round(drL, 1), Math.Round(drR, 1),
             Math.Round(overallPeak, 1), Math.Round(overallClip, 2));
     }
 
@@ -160,11 +150,9 @@ public class DrMeter
         int topCount = Math.Max(1, (int)(indexed.Count * TopPercentile));
         var top = indexed.Take(topCount).ToList();
 
-        double avgPeakLinear = top.Average(x => x.peak);
-        double avgRmsLinear = top.Average(x => x.rms);
-
-        double avgPeakDb = 20.0 * Math.Log10(Math.Max(avgPeakLinear, 1e-10));
-        double avgRmsDb = 20.0 * Math.Log10(Math.Max(avgRmsLinear, 1e-10));
+        // Average peaks and RMS in dB domain (TT DR Meter spec: average dB of top 20%)
+        double avgPeakDb = top.Average(x => 20.0 * Math.Log10(Math.Max(x.peak, 1e-10)));
+        double avgRmsDb = top.Average(x => 20.0 * Math.Log10(Math.Max(x.rms, 1e-10)));
 
         double dr = avgPeakDb - avgRmsDb;
 
