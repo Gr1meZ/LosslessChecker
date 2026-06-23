@@ -1,18 +1,25 @@
 using System.IO;
 using LosslessChecker.Models;
-using NAudio.Wave;
+using LosslessChecker.Services.Analyzers;
+using LosslessChecker.Services.Analysis;
 
 namespace LosslessChecker.Services;
 
 public class AudioAnalyzer
 {
-    private readonly CutoffDetector _cutoffDetector = new();
-    private readonly ArtifactDetector _artifactDetector = new();
-    private readonly DrMeter _drMeter = new();
-    private readonly ScoreCalculator _scoreCalculator = new();
-    private readonly BitDepthValidator _bitDepthValidator = new();
-    private readonly UpscaleDetector _upscaleDetector = new();
-    private readonly VerdictGenerator _verdictGenerator = new();
+    private readonly CutoffDetector _cutoff = new();
+    private readonly ArtifactDetector _artifacts = new();
+    private readonly TruePeakDetector _truePeak = new();
+    private readonly LufsMeter _lufs = new();
+    private readonly DrMeter _dr = new();
+    private readonly DcOffsetDetector _dcOffset = new();
+    private readonly PhaseAnalyzer _phase = new();
+    private readonly BitDepthValidator _bitDepth = new();
+    private readonly UpscaleDetector _upscale = new();
+    private readonly SpectrogramBuilder _spectro = new();
+    private readonly AuthenticityClassifier _authClassifier = new();
+    private readonly QualityScorer _qualityScorer = new();
+    private readonly VerdictGenerator _verdict = new();
 
     public AnalysisResult Analyze(AudioFileInfo fileInfo, CancellationToken ct = default)
     {
@@ -25,39 +32,24 @@ public class AudioAnalyzer
 
         try
         {
-            using var reader = CreateReader(fileInfo.FilePath);
-            if (reader == null)
-            {
-                return result with
-                {
-                    AnalysisStatus = AnalysisStatus.Error,
-                    ErrorMessage = "Unsupported format"
-                };
-            }
-
-            var format = reader.WaveFormat;
-
-            // Read original format from file header (NAudio decodes to float, losing bit depth info)
             var originalFmt = AudioFormatReader.ReadOriginal(fileInfo.FilePath);
-            int actualBitDepth = originalFmt?.BitDepth ?? format.BitsPerSample;
-            int actualSampleRate = originalFmt?.SampleRate ?? format.SampleRate;
+            int bitDepth = originalFmt?.BitDepth ?? 16;
+            int sampleRate = originalFmt?.SampleRate ?? 44100;
+            int channels = originalFmt?.Channels ?? 2;
 
             result = result with
             {
-                Format = GetFormatLabel(fileInfo.FilePath, format, actualBitDepth),
-                SampleRate = actualSampleRate,
-                BitDepth = actualBitDepth,
+                Format = GetFormatLabel(fileInfo.FilePath, sampleRate, bitDepth),
+                SampleRate = sampleRate,
+                BitDepth = bitDepth,
+                Channels = channels
             };
 
             if (ct.IsCancellationRequested)
-                return result with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = "Cancelled" };
+                return Cancelled(result);
 
-            var samples = DecodeToMono(reader);
-
-            if (ct.IsCancellationRequested)
-                return result with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = "Cancelled" };
-
-            double duration = samples.Length / (double)format.SampleRate;
+            var buffer = AudioDecoder.Decode(fileInfo.FilePath, ct);
+            double duration = buffer.Length / (double)buffer.SampleRate;
             result = result with { DurationSeconds = Math.Round(duration, 1) };
 
             if (duration < 5.0)
@@ -65,120 +57,117 @@ public class AudioAnalyzer
                 return result with
                 {
                     AnalysisStatus = AnalysisStatus.Completed,
-                    // Status = "Too short",
-                    // LosslessScore = 50,
-                    // Verdict = "File too short (<5s) for reliable analysis."
+                    Authenticity = "SKIPPED",
+                    QualityScore = 5,
+                    Decision = "INVESTIGATE",
+                    StructuredReport = "File too short (<5s) for reliable analysis."
                 };
             }
 
-            if (ct.IsCancellationRequested)
-                return result with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = "Cancelled" };
+            var mono = new float[buffer.Length];
+            for (int i = 0; i < buffer.Length; i++)
+                mono[i] = buffer.IsStereo
+                    ? (buffer.Left[i] + buffer.Right[i]) * 0.5f
+                    : buffer.Left[i];
 
-            var (cutoff, cutoffSlope, spectrum, spectrogram, spectWidth, spectHeight) =
-                _cutoffDetector.DetectFull(samples, format.SampleRate);
+            var (cutoffHz, cutoffSlope, spectrum) = _cutoff.DetectFull(mono, sampleRate);
+            var (encoderMatch, shelfType) = _cutoff.ClassifyCutoff(cutoffHz, cutoffSlope, sampleRate);
+            bool isFakeHiRes = _cutoff.IsFakeHiRes(cutoffHz, sampleRate);
 
-            if (ct.IsCancellationRequested)
-                return result with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = "Cancelled" };
+            if (ct.IsCancellationRequested) return Cancelled(result);
 
-            var (hasArtifacts, artifactLevel) = _artifactDetector.Detect(samples, format.SampleRate, cutoff);
+            var (hasArtifacts, artifactLevel, artifactType) =
+                _artifacts.Detect(mono, sampleRate, cutoffHz);
 
-            if (ct.IsCancellationRequested)
-                return result with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = "Cancelled" };
+            if (ct.IsCancellationRequested) return Cancelled(result);
 
-            var (dr, truePeak, clippingPercent) = _drMeter.Analyze(samples, format.SampleRate);
+            var tpResult = _truePeak.Analyze(buffer);
 
-            // Bit depth validation
-            var (bitSuspicious, bitVerdict, noiseFloor) = _bitDepthValidator.Validate(
-                samples, format.BitsPerSample, format.SampleRate);
+            if (ct.IsCancellationRequested) return Cancelled(result);
 
-            // Upscale detection
-            var (isUpscale, upscaleVerdict, maxHfDb) = _upscaleDetector.Detect(
-                spectrum, format.SampleRate);
+            var lufsResult = _lufs.Analyze(buffer);
+
+            if (ct.IsCancellationRequested) return Cancelled(result);
+
+            var drResult = _dr.AnalyzeStereo(buffer);
+
+            if (ct.IsCancellationRequested) return Cancelled(result);
+
+            var dcResult = _dcOffset.Analyze(buffer);
+
+            if (ct.IsCancellationRequested) return Cancelled(result);
+
+            var phaseResult = _phase.Analyze(buffer);
+
+            if (ct.IsCancellationRequested) return Cancelled(result);
+
+            var bitResult = _bitDepth.ValidateStereo(buffer, bitDepth);
+
+            if (ct.IsCancellationRequested) return Cancelled(result);
+
+            var (isUpscale, upscaleVerdict, maxHfDb) = _upscale.Detect(spectrum, sampleRate);
+
+            var (spectroData, spectroW, spectroH) = _spectro.Build(mono, sampleRate);
 
             result = result with
             {
-                CutoffFrequency = Math.Round(cutoff, 0),
+                CutoffFrequency = Math.Round(cutoffHz, 0),
                 CutoffSlope = Math.Round(cutoffSlope, 2),
+                ShelfType = shelfType,
+                EncoderMatch = encoderMatch,
                 HasArtifacts = hasArtifacts,
                 ArtifactLevel = artifactLevel,
-                DynamicRange = Math.Round(dr, 1),
-                        //     SamplePeakDb = Math.Round(samplePeak, 1),
-                        //     TruePeakDb = Math.Round(truePeak, 1),
-                ClippingPercent = Math.Round(clippingPercent, 2),
-                // AveragedSpectrum = spectrum,
-                SpectrogramFlat = spectrogram,
-                SpectrogramWidth = spectWidth,
-                SpectrogramHeight = spectHeight,
-                BitDepthSuspicious = bitSuspicious,
-                // NoiseFloorDb = Math.Round(noiseFloor, 1),
-                // BitDepthVerdict = bitVerdict,
-                IsUpscale = isUpscale,
+                ArtifactType = artifactType,
+                SamplePeakDb = tpResult.SamplePeakDbL,
+                TruePeakDb = Math.Max(tpResult.TruePeakDbL, tpResult.TruePeakDbR),
+                ClippingPercent = tpResult.ClippingPercent,
+                HasIsp = tpResult.HasIsp,
+                DynamicRange = drResult.Dr,
+                IntegratedLufs = lufsResult.IntegratedLufs,
+                LoudnessRange = lufsResult.LoudnessRange,
+                Plr = Math.Round(Math.Max(tpResult.TruePeakDbL, tpResult.TruePeakDbR) - lufsResult.IntegratedLufs, 1),
+                DcOffsetL = dcResult.DcOffsetL,
+                DcOffsetR = dcResult.DcOffsetR,
+                BitDepthSuspicious = bitResult.IsSuspicious,
+                LsbZeroPadded = bitResult.LsbZeroPadded,
+                EffectiveBitDepth = bitResult.EffectiveBitDepth,
+                Correlation = phaseResult.Correlation,
+                IsMonoCompatible = phaseResult.IsMonoCompatible,
+                IsUpscale = isUpscale || isFakeHiRes,
                 MaxHfDb = Math.Round(maxHfDb, 1),
-                // UpscaleVerdict = upscaleVerdict
+                SpectrogramFlat = spectroData,
+                SpectrogramWidth = spectroW,
+                SpectrogramHeight = spectroH
             };
 
-            // result = _scoreCalculator.Calculate(result);
+            result = result with { Authenticity = _authClassifier.Classify(result) };
+            var (qualityScore, decision) = _qualityScorer.Score(result);
             result = result with
             {
-                // Verdict = _verdictGenerator.Generate(result),
+                QualityScore = qualityScore,
+                Decision = decision,
+                StructuredReport = _verdict.Generate(result),
                 AnalysisStatus = AnalysisStatus.Completed
             };
 
             return result;
         }
+        catch (OperationCanceledException)
+        {
+            return Cancelled(result);
+        }
         catch (Exception ex)
         {
-            return result with
-            {
-                AnalysisStatus = AnalysisStatus.Error,
-                ErrorMessage = ex.Message
-            };
+            return result with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = ex.Message };
         }
     }
 
-    private static float[] DecodeToMono(WaveStream reader)
-    {
-        ISampleProvider provider;
+    private static AnalysisResult Cancelled(AnalysisResult r)
+        => r with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = "Cancelled" };
 
-        if (reader.WaveFormat.Channels > 1)
-        {
-            var monoFormat = new WaveFormat(reader.WaveFormat.SampleRate, 16, 1);
-            using var resampler = new MediaFoundationResampler(reader, monoFormat);
-            provider = resampler.ToSampleProvider();
-        }
-        else
-        {
-            provider = reader.ToSampleProvider();
-        }
-
-        var samples = new List<float>((int)(reader.TotalTime.TotalSeconds * reader.WaveFormat.SampleRate));
-        var buffer = new float[4096];
-        int read;
-        while ((read = provider.Read(buffer, 0, buffer.Length)) > 0)
-        {
-            for (int i = 0; i < read; i++)
-                samples.Add(buffer[i]);
-        }
-
-        return samples.ToArray();
-    }
-
-    private static WaveStream? CreateReader(string filePath)
-    {
-        var ext = Path.GetExtension(filePath).ToLowerInvariant();
-        return ext switch
-        {
-            ".mp3" => new Mp3FileReader(filePath),
-            ".wav" => new WaveFileReader(filePath),
-            ".flac" => new AudioFileReader(filePath),
-            ".m4a" or ".alac" => new AudioFileReader(filePath),
-            _ => null
-        };
-    }
-
-    private static string GetFormatLabel(string filePath, WaveFormat format, int actualBitDepth)
+    private static string GetFormatLabel(string filePath, int sampleRate, int bitDepth)
     {
         var ext = Path.GetExtension(filePath).ToUpperInvariant().TrimStart('.');
-        return $"{ext} {format.SampleRate / 1000.0:F0}kHz/{actualBitDepth}bit";
+        return $"{ext} {sampleRate / 1000.0:F0}kHz/{bitDepth}bit";
     }
 }

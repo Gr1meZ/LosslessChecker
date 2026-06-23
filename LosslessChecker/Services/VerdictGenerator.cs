@@ -1,88 +1,76 @@
+using System.Text;
 using LosslessChecker.Models;
 
 namespace LosslessChecker.Services;
 
 public class VerdictGenerator
 {
-    public string Generate(AnalysisResult result)
+    public string Generate(AnalysisResult r)
     {
-        var lines = new List<string>();
-        var nyquist = result.SampleRate / 2.0;
-        double cutoffRatio = nyquist > 0 ? result.CutoffFrequency / nyquist : 1.0;
+        var sb = new StringBuilder();
+        sb.AppendLine(r.FileName);
+        sb.AppendLine();
 
-        // Cutoff analysis
-        if (cutoffRatio >= 0.90)
-            lines.Add($"Frequency response extends to {result.CutoffFrequency:F0} Hz ({cutoffRatio * 100:F0}% of Nyquist) — full spectrum.");
-        else if (cutoffRatio >= 0.82)
-            lines.Add($"Gentle high-frequency rolloff at {result.CutoffFrequency:F0} Hz ({cutoffRatio * 100:F0}% Nyquist) — natural analog or mild filtering.");
-        else if (cutoffRatio >= 0.72)
-            lines.Add($"Moderate frequency cutoff at {result.CutoffFrequency:F0} Hz ({cutoffRatio * 100:F0}% Nyquist).");
+        sb.Append("1. LOSSLESS STATUS: ");
+        sb.Append(r.Authenticity);
+        sb.Append(" | ");
+        sb.Append($"cutoff at {r.CutoffFrequency:F0} Hz");
+        if (r.ShelfType.Length > 0) sb.Append($", {r.ShelfType.ToLower()} rolloff");
+        if (r.EncoderMatch != "None") sb.Append($", matches {r.EncoderMatch}");
+        sb.AppendLine();
+        sb.AppendLine();
 
-        if (cutoffRatio < 0.72)
-        {
-            if (cutoffRatio >= 0.60)
-                lines.Add($"Significant brickwall cutoff at {result.CutoffFrequency:F0} Hz — likely transcoded from 192-256 kbps lossy source.");
-            else if (cutoffRatio >= 0.45)
-                lines.Add($"Severe brickwall cutoff at {result.CutoffFrequency:F0} Hz — characteristic of 128-160 kbps MP3/AAC transcode.");
-            else
-                lines.Add($"Extreme lowpass at {result.CutoffFrequency:F0} Hz — very low-bitrate lossy source.");
-        }
-
-        // Artifact analysis
-        if (result.ArtifactLevel != "None")
-        {
-            string desc = result.ArtifactLevel switch
-            {
-                "Strong" => "Strong block-boundary artifacts and spectral flatness above cutoff — definitive lossy encoder signature.",
-                "Medium" => "Medium encoder artifacts: shelf-like noise floor and spectral structure typical of perceptual codec.",
-                "Weak" => "Weak artifacts: minor spectral anomalies above cutoff that may indicate prior lossy encoding.",
-                _ => ""
-            };
-            if (desc.Length > 0) lines.Add(desc);
-        }
-
-        // Dynamic Range
-        if (result.DynamicRange >= 12)
-            lines.Add($"Excellent dynamic range: DR{result.DynamicRange:F0}. Full dynamics preserved.");
-        else if (result.DynamicRange >= 9)
-            lines.Add($"Good dynamic range: DR{result.DynamicRange:F0}. Healthy headroom.");
-        else if (result.DynamicRange >= 7)
-            lines.Add($"Average dynamic range: DR{result.DynamicRange:F0}. Typical of modern mastering.");
-        else if (result.DynamicRange >= 5)
-            lines.Add($"Below-average dynamic range: DR{result.DynamicRange:F0}. Compressed mastering — check for clipping.");
+        sb.Append("2. CLIPPING & PEAK: ");
+        if (r.HasIsp || r.ClippingPercent > 0)
+            sb.Append("CLIPPED | ");
+        else if (r.TruePeakDb > -0.5)
+            sb.Append("HOT | ");
         else
-            lines.Add($"Very low dynamic range: DR{result.DynamicRange:F0}. Heavy compression/limiting (loudness war).");
+            sb.Append("CLEAN | ");
+        sb.Append($"Sample Peak {r.SamplePeakDb:F1} dBFS, True Peak {r.TruePeakDb:F1} dBTP");
+        if (r.HasIsp) sb.Append(", ISP DISTORTION");
+        sb.AppendLine();
+        sb.AppendLine();
 
-        // Clipping
-        if (result.ClippingPercent > 5)
-        {
-            lines.Add($"Severe clipping: {result.ClippingPercent:F1}% samples at 0 dBFS. Brickwall-limited. Audible distortion likely on resolving equipment.");
-        }
-        else if (result.ClippingPercent > 1)
-        {
-            lines.Add($"Noticeable clipping: {result.ClippingPercent:F1}% samples at ceiling. Intersample peaks may distort on playback.");
-        }
-        else if (result.ClippingPercent > 0)
-        {
-            lines.Add($"Minor clipping: {result.ClippingPercent:F2}% samples. Negligible.");
-        }
+        sb.Append("3. DYNAMICS: ");
+        if (r.DynamicRange >= 13) sb.Append("AUDIOPHILE");
+        else if (r.DynamicRange >= 9) sb.Append("GOOD");
+        else if (r.DynamicRange >= 6) sb.Append("COMPRESSED");
+        else sb.Append("CATASTROPHIC");
+        sb.Append($" | DR{r.DynamicRange:F0}");
+        if (r.IntegratedLufs < -1)
+            sb.Append($", Integrated {r.IntegratedLufs:F1} LUFS");
+        if (r.Plr > 0)
+            sb.Append($", PLR {r.Plr:F1} dB");
+        sb.AppendLine();
+        sb.AppendLine();
 
-        // Bit depth
-        // if (result.BitDepthSuspicious)
-        // {
-        //     lines.Add(result.BitDepthVerdict);
-        // }
+        sb.Append("4. TECHNICAL RED FLAGS: ");
+        var flags = new List<string>();
+        if (Math.Abs(r.DcOffsetL) > 0.001 || Math.Abs(r.DcOffsetR) > 0.001)
+            flags.Add($"DC Offset: L={r.DcOffsetL:F4}%, R={r.DcOffsetR:F4}%");
+        if (r.Correlation < 0)
+            flags.Add($"Phase correlation: {r.Correlation:F2} (mono incompatible)");
+        if (r.LsbZeroPadded)
+            flags.Add($"24-bit file has zero-padded LSBs (effective {r.EffectiveBitDepth}-bit)");
+        if (r.BitDepthSuspicious)
+            flags.Add($"Bit depth suspicious");
+        if (r.IsUpscale)
+            flags.Add($"Hi-Res upscale suspected (max HF {r.MaxHfDb:F0} dB)");
+        sb.AppendLine(flags.Count > 0 ? string.Join("\n   - ", flags) : "None");
+        sb.AppendLine();
 
-        // Upscale
-        // if (result.IsUpscale)
-        // {
-        //     lines.Add(result.UpscaleVerdict);
-        // }
+        sb.Append("5. OVERALL VERDICT: ");
+        sb.Append($"{r.QualityScore}/10");
+        sb.Append(" | ");
+        sb.Append(r.Decision);
+        if (r.QualityScore >= 7 && r.Authenticity == "TRUE LOSSLESS")
+            sb.Append(" — Excellent, genuine lossless");
+        else if (r.Authenticity == "TRUE LOSSLESS" && r.QualityScore < 4)
+            sb.Append(" — Genuine but poorly mastered");
+        else if (r.Authenticity.StartsWith("FAKE"))
+            sb.Append(" — Not genuine, find original source");
 
-        // Material quality assessment
-            // if (result.TruePeakDb > 0)
-            //     lines.Add($"True Peak at +{result.TruePeakDb:F1} dBTP — intersample peaks exceed 0 dBFS. May clip on some DACs.");
-
-        return string.Join(" ", lines);
+        return sb.ToString();
     }
 }
