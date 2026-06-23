@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="LosslessChecker.Tests/LosslessChecker.Tests.csproj" />
   <Project Path="LosslessChecker/LosslessChecker.csproj" />
 </Solution>
