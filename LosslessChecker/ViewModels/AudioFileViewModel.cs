@@ -7,64 +7,30 @@ namespace LosslessChecker.ViewModels;
 
 public partial class AudioFileViewModel : ObservableObject
 {
-    [ObservableProperty]
-    private string _fileName = "";
-
-    [ObservableProperty]
-    private string _format = "";
-
-    [ObservableProperty]
-    private double _cutoffFrequency;
-
-    [ObservableProperty]
-    private double _cutoffSlope;
-
-    [ObservableProperty]
-    private double _dynamicRange;
-
-    [ObservableProperty]
-    private double _truePeak;
-
-    [ObservableProperty]
-    private double _clippingPercent;
-
-    [ObservableProperty]
-    private double _losslessScore;
-
-    [ObservableProperty]
-    private string _statusMessage = "";
-
-    [ObservableProperty]
-    private string _verdict = "";
-
-    [ObservableProperty]
-    private bool _hasArtifacts;
-
-    [ObservableProperty]
-    private string _artifactLevel = "";
-
-    [ObservableProperty]
-    private AnalysisStatus _analysisStatus = AnalysisStatus.Pending;
-
-    [ObservableProperty]
-    private string _errorMessage = "";
-
-    [ObservableProperty]
-    private bool _bitDepthSuspicious;
-
-    [ObservableProperty]
-    private double _noiseFloorDb;
-
-    [ObservableProperty]
-    private bool _isUpscale;
-
-    [ObservableProperty]
-    private WriteableBitmap? _spectrogramBitmap;
+    [ObservableProperty] private string _fileName = "";
+    [ObservableProperty] private string _format = "";
+    [ObservableProperty] private double _cutoffFrequency;
+    [ObservableProperty] private double _cutoffSlope;
+    [ObservableProperty] private double _dynamicRange;
+    [ObservableProperty] private double _truePeak;
+    [ObservableProperty] private double _clippingPercent;
+    [ObservableProperty] private double _losslessScore;
+    [ObservableProperty] private string _statusMessage = "";
+    [ObservableProperty] private string _verdict = "";
+    [ObservableProperty] private bool _hasArtifacts;
+    [ObservableProperty] private string _artifactLevel = "";
+    [ObservableProperty] private AnalysisStatus _analysisStatus = AnalysisStatus.Pending;
+    [ObservableProperty] private string _errorMessage = "";
+    [ObservableProperty] private bool _bitDepthSuspicious;
+    [ObservableProperty] private double _noiseFloorDb;
+    [ObservableProperty] private bool _isUpscale;
+    [ObservableProperty] private WriteableBitmap? _spectrogramBitmap;
 
     public string FilePath { get; }
 
-    // Raw spectrogram data stored as byte[] (dB-quantized), built into bitmap lazily
-    internal byte[][]? RawSpectrogram { get; private set; }
+    // Flat spectrogram data, deleted after bitmap built
+    private byte[]? _rawSpectro;
+    private int _spectroWidth, _spectroHeight;
 
     public AudioFileViewModel(AudioFileInfo fileInfo)
     {
@@ -92,55 +58,42 @@ public partial class AudioFileViewModel : ObservableObject
         NoiseFloorDb = result.NoiseFloorDb;
         IsUpscale = result.IsUpscale;
 
-        // Store raw spectrogram data only — bitmap built on demand
-        if (result.SpectrogramData is { Length: > 0 })
-            RawSpectrogram = result.SpectrogramData;
+        if (result.SpectrogramFlat is { Length: > 0 })
+        {
+            _rawSpectro = result.SpectrogramFlat;
+            _spectroWidth = result.SpectrogramWidth;
+            _spectroHeight = result.SpectrogramHeight;
+        }
     }
 
     public WriteableBitmap? GetOrBuildSpectrogram()
     {
-        if (SpectrogramBitmap != null)
-            return SpectrogramBitmap;
+        if (SpectrogramBitmap != null) return SpectrogramBitmap;
+        if (_rawSpectro == null || _spectroWidth < 1 || _spectroHeight < 1) return null;
 
-        if (RawSpectrogram is not { Length: > 0 } frames || frames[0].Length == 0)
-            return null;
+        int w = _spectroWidth, h = _spectroHeight;
+        var bmp = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
+        var pixels = new byte[w * h * 4];
 
-        SpectrogramBitmap = BuildBitmap(frames);
-
-        // Free raw data after bitmap is built (user is viewing it)
-        RawSpectrogram = null;
-        return SpectrogramBitmap;
-    }
-
-    private static WriteableBitmap BuildBitmap(byte[][] frames)
-    {
-        int width = frames.Length;
-        int height = frames[0].Length;
-
-        var bmp = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
-        var pixels = new byte[width * height * 4];
-
-        for (int x = 0; x < width; x++)
+        for (int x = 0; x < w; x++)
         {
-            for (int y = 0; y < height; y++)
+            for (int y = 0; y < h; y++)
             {
-                byte dbByte = frames[x][y];
+                byte dbByte = _rawSpectro[x * h + y];
                 double t = dbByte / 255.0;
-
-                int py = height - 1 - y;
-                int idx = (py * width + x) * 4;
-
+                int py = h - 1 - y;
+                int idx = (py * w + x) * 4;
                 var (r, g, b) = HotColormap(t);
-                pixels[idx + 0] = b;
-                pixels[idx + 1] = g;
-                pixels[idx + 2] = r;
-                pixels[idx + 3] = 255;
+                pixels[idx] = b; pixels[idx + 1] = g; pixels[idx + 2] = r; pixels[idx + 3] = 255;
             }
         }
 
         bmp.Lock();
-        bmp.WritePixels(new System.Windows.Int32Rect(0, 0, width, height), pixels, width * 4, 0);
+        bmp.WritePixels(new System.Windows.Int32Rect(0, 0, w, h), pixels, w * 4, 0);
         bmp.Unlock();
+
+        SpectrogramBitmap = bmp;
+        _rawSpectro = null; // free the 75 KB
         return bmp;
     }
 

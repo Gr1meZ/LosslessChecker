@@ -143,11 +143,10 @@ public partial class MainViewModel : ObservableObject
                     vm.ApplyResult(result);
 
                     int done = Interlocked.Increment(ref processed);
-                    // Batch UI updates: progress bar every 10 files, per-file status always
                     await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         ProcessedFiles = done;
-                        if (done % 10 == 0 || done == TotalFiles)
+                        if (done % 5 == 0 || done == TotalFiles)
                             Progress = TotalFiles > 0 ? (double)done / TotalFiles * 100.0 : 0;
 
                         if (result.AnalysisStatus == AnalysisStatus.Error)
@@ -157,9 +156,13 @@ public partial class MainViewModel : ObservableObject
                         else if (result.Format.StartsWith("MP3") && result.LosslessScore >= 55)
                             GoodMp3Count++;
 
-                        if (done % 10 == 0 || done == TotalFiles)
+                        if (done % 5 == 0 || done == TotalFiles)
                             UpdateSummary();
                     });
+
+                    // Force GC every 15 files to reclaim decoded PCM samples (~50 MB each)
+                    if (done % 15 == 0)
+                        GC.Collect(1, GCCollectionMode.Optimized, false);
                 }
             });
 

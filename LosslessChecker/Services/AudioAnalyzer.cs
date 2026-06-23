@@ -74,7 +74,8 @@ public class AudioAnalyzer
             if (ct.IsCancellationRequested)
                 return result with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = "Cancelled" };
 
-            var (cutoff, cutoffSlope, spectrum, spectrogram) = _cutoffDetector.DetectFull(samples, format.SampleRate);
+            var (cutoff, cutoffSlope, spectrum, spectrogram, spectWidth, spectHeight) =
+                _cutoffDetector.DetectFull(samples, format.SampleRate);
 
             if (ct.IsCancellationRequested)
                 return result with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = "Cancelled" };
@@ -104,7 +105,9 @@ public class AudioAnalyzer
                 TruePeak = Math.Round(truePeak, 1),
                 ClippingPercent = Math.Round(clippingPercent, 2),
                 AveragedSpectrum = spectrum,
-                SpectrogramData = spectrogram,
+                SpectrogramFlat = spectrogram,
+                SpectrogramWidth = spectWidth,
+                SpectrogramHeight = spectHeight,
                 BitDepthSuspicious = bitSuspicious,
                 NoiseFloorDb = Math.Round(noiseFloor, 1),
                 BitDepthVerdict = bitVerdict,
