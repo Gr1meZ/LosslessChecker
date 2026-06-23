@@ -14,14 +14,12 @@ public class CutoffDetector
         float[] samples, int sampleRate)
     {
         int height = SpectroFreqBins;
-
         if (samples.Length < FftSize)
             return (sampleRate / 2.0, 0, Array.Empty<double>(), Array.Empty<byte>(), 0, height);
 
         var nyquist = sampleRate / 2.0;
         var fft = new Fft(FftSize);
         var window = Window.Hann(FftSize);
-
         var avgMagnitudes = new double[FftSize / 2];
         int frameCount = 0;
 
@@ -35,28 +33,23 @@ public class CutoffDetector
             var frame = new float[FftSize];
             Array.Copy(samples, pos, frame, 0, FftSize);
             for (int i = 0; i < FftSize; i++) frame[i] *= window[i];
-
             var real = new float[FftSize];
             var imag = new float[FftSize];
             Array.Copy(frame, real, FftSize);
             fft.Direct(real, imag);
-
             for (int i = 0; i < FftSize / 2; i++)
             {
                 var mag = Math.Sqrt(real[i] * real[i] + imag[i] * imag[i]);
                 avgMagnitudes[i] += mag;
             }
             frameCount++;
-
             spectroCounter++;
             if (spectroCounter % spectroStep == 0)
-            {
                 for (int j = 0; j < FftSize / 2; j++)
                 {
                     double m = Math.Sqrt(real[j] * real[j] + imag[j] * imag[j]);
                     if (m > globalPeakMag) globalPeakMag = m;
                 }
-            }
         }
 
         if (frameCount == 0)
@@ -65,11 +58,10 @@ public class CutoffDetector
         for (int i = 0; i < avgMagnitudes.Length; i++)
             avgMagnitudes[i] /= frameCount;
 
-        // Pass 2: build flat byte[] spectrogram
+        // Pass 2: build spectrogram
         spectroCounter = 0;
         int framesBuilt = 0;
-        int width = Math.Min(SpectroMaxFrames,
-            ((samples.Length - FftSize) / HopSize) / spectroStep + 1);
+        int width = Math.Min(SpectroMaxFrames, ((samples.Length - FftSize) / HopSize) / spectroStep + 1);
         var flat = new byte[width * height];
 
         for (int pos = 0; pos + FftSize <= samples.Length; pos += HopSize)
@@ -77,91 +69,141 @@ public class CutoffDetector
             var frame = new float[FftSize];
             Array.Copy(samples, pos, frame, 0, FftSize);
             for (int i = 0; i < FftSize; i++) frame[i] *= window[i];
-
             var real = new float[FftSize];
             var imag = new float[FftSize];
             Array.Copy(frame, real, FftSize);
             fft.Direct(real, imag);
-
             spectroCounter++;
             if (spectroCounter % spectroStep == 0 && framesBuilt < width)
             {
                 double ratio = (double)(FftSize / 2) / height;
                 double refMag = Math.Max(globalPeakMag, 1e-10);
                 int offset = framesBuilt * height;
-
                 for (int j = 0; j < height; j++)
                 {
                     int srcIdx = Math.Min((int)(j * ratio), FftSize / 2 - 1);
                     double mag = Math.Sqrt(real[srcIdx] * real[srcIdx] + imag[srcIdx] * imag[srcIdx]);
                     double db = 20.0 * Math.Log10(Math.Max(mag, 1e-10) / refMag);
-                    int val = (int)((db + 96.0) / 96.0 * 255);
-                    flat[offset + j] = (byte)Math.Max(0, Math.Min(255, val));
+                    flat[offset + j] = (byte)Math.Max(0, Math.Min(255, (int)((db + 96.0) / 96.0 * 255)));
                 }
                 framesBuilt++;
             }
         }
 
-        var (cutoff, cutoffSlope) = FindCutoff(avgMagnitudes, nyquist, sampleRate);
+        var (cutoff, cutoffSlope) = FindCutoffByDerivative(avgMagnitudes, nyquist);
         return (cutoff, cutoffSlope, avgMagnitudes, flat, framesBuilt, height);
     }
 
     public double DetectCutoff(float[] samples, int sampleRate)
-    {
-        var (cutoff, _, _, _, _, _) = DetectFull(samples, sampleRate);
-        return cutoff;
-    }
+        => DetectFull(samples, sampleRate).cutoff;
 
     public (double cutoff, double[] spectrum) DetectWithSpectrum(float[] samples, int sampleRate)
     {
-        var (cutoff, _, spectrum, _, _, _) = DetectFull(samples, sampleRate);
-        return (cutoff, spectrum);
+        var r = DetectFull(samples, sampleRate);
+        return (r.cutoff, r.spectrum);
     }
 
-    private static (double cutoff, double cutoffSlope) FindCutoff(
-        double[] avgMagnitudes, double nyquist, int sampleRate)
+    // === NEW: Derivative-based cutoff detection ===
+    // Instead of a fixed -60 dB amplitude threshold (which fails on quiet tracks
+    // and is fooled by dither noise), we search for the STEEPEST NEGATIVE SLOPE
+    // in the dB spectrum. A brickwall encoder creates a 30-40 dB drop over a few
+    // bins → large negative derivative. Natural rolloff is gentle (−3 to −8 dB/oct).
+    //
+    // Algorithm:
+    //   1. Convert averaged spectrum to dB (ref=peak in low band)
+    //   2. Smooth the dB array (3-bin moving average to reduce FFT ripple)
+    //   3. Compute sliding window slope (dB per octave) at each bin
+    //   4. Find bin with the most negative slope in upper 2/3 of spectrum
+    //   5. If slope < −18 dB/oct → brickwall at that bin → cutoff
+    //   6. If slope >= −10 dB/oct → natural rolloff → return Nyquist (no penalizable cutoff)
+    //   7. If slope in [−18, −10] → mild filtering, use that bin as cutoff
+
+    private static (double cutoff, double cutoffSlope) FindCutoffByDerivative(
+        double[] avgMagnitudes, double nyquist)
     {
-        int lowBandEnd = avgMagnitudes.Length / 6;
+        int bins = avgMagnitudes.Length;
+        if (bins < 10) return (nyquist, 0);
+
+        // 1. Find peak in low band for dB reference
         double peakMag = 0;
-        for (int i = 0; i < lowBandEnd; i++)
+        for (int i = 0; i < bins / 6; i++)
             peakMag = Math.Max(peakMag, avgMagnitudes[i]);
         if (peakMag <= 0) return (nyquist, 0);
 
-        double thresholdDb = sampleRate >= 88200 ? -65.0 : -60.0;
-        double thresholdMag = peakMag * Math.Pow(10, thresholdDb / 20.0);
+        // 2. Convert to dB spectrum
+        var spectrumDb = new double[bins];
+        for (int i = 0; i < bins; i++)
+            spectrumDb[i] = 20.0 * Math.Log10(Math.Max(avgMagnitudes[i], 1e-10) / peakMag);
 
-        int startBin = avgMagnitudes.Length / 3;
-        int cutoffBin = avgMagnitudes.Length - 1;
-        for (int bin = avgMagnitudes.Length - 1; bin >= startBin; bin--)
+        // 3. Smooth with 5-bin moving average
+        var smoothed = new double[bins];
+        for (int i = 0; i < bins; i++)
         {
-            if (avgMagnitudes[bin] > thresholdMag) { cutoffBin = bin; break; }
+            double sum = 0; int count = 0;
+            for (int j = Math.Max(0, i - 2); j <= Math.Min(bins - 1, i + 2); j++)
+            { sum += spectrumDb[j]; count++; }
+            smoothed[i] = sum / count;
         }
 
-        double cutoff = (double)cutoffBin / avgMagnitudes.Length * nyquist;
-        double cutoffSlope = MeasureCutoffSlope(avgMagnitudes, peakMag, cutoffBin, nyquist);
-        return (cutoff, cutoffSlope);
-    }
+        // 4. Compute sliding slope in dB/octave across a 30-bin window
+        // (30 bins at 44.1kHz ≈ 323 Hz — wide enough to catch brickwall, narrow enough for precision)
+        const int windowBins = 30;
+        double freqPerBin = nyquist / bins;
+        double bestSlope = 0;
+        int bestBin = bins - 1;
 
-    private static double MeasureCutoffSlope(
-        double[] avgMagnitudes, double peakMag, int cutoffBin, double nyquist)
-    {
-        int slopeStart = Math.Max(1, cutoffBin - 15);
-        int slopeEnd = Math.Min(cutoffBin + 15, avgMagnitudes.Length - 1);
-        if (slopeEnd - slopeStart < 5) return 0;
+        int searchStart = bins / 3; // Skip lowest 1/3 (not relevant for cutoff)
 
-        double freqPerBin = nyquist / avgMagnitudes.Length;
-        double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-        int n = 0;
-        for (int bin = slopeStart; bin < slopeEnd; bin++)
+        for (int center = searchStart; center < bins - windowBins / 2; center++)
         {
-            double freq = bin * freqPerBin;
-            if (freq < 1) continue;
-            double x = Math.Log2(freq / 1000.0);
-            double mag = Math.Max(avgMagnitudes[bin], 1e-10);
-            double y = 20.0 * Math.Log10(mag / peakMag);
-            sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x; n++;
+            int wStart = Math.Max(1, center - windowBins / 2);
+            int wEnd = Math.Min(bins - 1, center + windowBins / 2);
+            if (wEnd - wStart < 10) continue;
+
+            // Linear regression: dB vs log2(freq)
+            double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+            int n = 0;
+            for (int i = wStart; i <= wEnd; i++)
+            {
+                double freq = i * freqPerBin;
+                if (freq < 1) continue;
+                double x = Math.Log2(freq / 1000.0); // log2(kHz)
+                double y = smoothed[i];
+                sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x; n++;
+            }
+
+            if (n < 5) continue;
+            double denom = n * sumX2 - sumX * sumX;
+            if (Math.Abs(denom) < 1e-10) continue;
+            double slope = (n * sumXY - sumX * sumY) / denom;
+
+            // We want the MOST NEGATIVE slope (steepest drop)
+            if (slope < bestSlope)
+            {
+                bestSlope = slope;
+                bestBin = center;
+            }
         }
-        if (n < 3 || Math.Abs(n * sumX2 - sumX * sumX) < 1e-10) return 0;
-        return (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+
+        // 5. Classify based on slope
+        double cutoffHz;
+        if (bestSlope < -18)
+        {
+            // Brickwall: MP3/AAC encoder hard low-pass
+            cutoffHz = (double)bestBin / bins * nyquist;
+        }
+        else if (bestSlope < -10)
+        {
+            // Mild filtering: could be gentle anti-aliasing or 320kbps MP3
+            cutoffHz = (double)bestBin / bins * nyquist;
+        }
+        else
+        {
+            // Natural rolloff: no encoder cutoff detected → return Nyquist
+            cutoffHz = nyquist;
+            bestSlope = 0; // Don't report slope if no cutoff found
+        }
+
+        return (cutoffHz, Math.Round(bestSlope, 2));
     }
 }

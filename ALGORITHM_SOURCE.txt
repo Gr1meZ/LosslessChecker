@@ -1,0 +1,285 @@
+// LosslessChecker — compressed algorithm source (no UI)
+// Deps: NAudio 2.2.1, NWaves 0.9.6, .NET 10
+
+using System.IO;
+using LosslessChecker.Models;
+using NAudio.Wave;
+using NWaves.Transforms;
+using NWaves.Windows;
+
+namespace LosslessChecker.Models;
+public enum AnalysisStatus { Pending, Processing, Completed, Error }
+public record AudioFileInfo(string FilePath, string FileName, long FileSizeBytes);
+public record AnalysisResult {
+    public string FilePath{get;init;}="",FileName{get;init;}="",Format{get;init;}="";
+    public int SampleRate{get;init;},Bitrate{get;init;},BitDepth{get;init;};
+    public double DurationSeconds{get;init;},CutoffFrequency{get;init;},CutoffSlope{get;init;};
+    public bool HasArtifacts{get;init;}; public string ArtifactLevel{get;init;}="None";
+    public double DynamicRange{get;init;},TruePeak{get;init;},ClippingPercent{get;init;};
+    public bool BitDepthSuspicious{get;init;}; public double NoiseFloorDb{get;init;};
+    public string BitDepthVerdict{get;init;}="",UpscaleVerdict{get;init;}="";
+    public bool IsUpscale{get;init;}; public double MaxHfDb{get;init;},LosslessScore{get;init;};
+    public string Status{get;init;}="",Verdict{get;init;}=""; public string?ErrorMessage{get;init;}
+    public AnalysisStatus AnalysisStatus{get;init;}=AnalysisStatus.Pending;
+    public double[]AveragedSpectrum{get;init;}=Array.Empty<double>();
+    public byte[]SpectrogramFlat{get;init;}=Array.Empty<byte>();
+    public int SpectrogramWidth{get;init;},SpectrogramHeight{get;init;};
+}
+
+namespace LosslessChecker.Services;
+
+public static class AudioFormatReader {
+    public record OriginalFormat(int SampleRate, int BitDepth, int Channels);
+    public static OriginalFormat?ReadOriginal(string path){
+        var e=Path.GetExtension(path).ToLowerInvariant();
+        return e switch{".flac"=>ReadFlac(path),".wav"=>ReadWav(path),_=>null};
+    }
+    static OriginalFormat?ReadFlac(string p){try{
+        var h=new byte[42];using var f=new FileStream(p,FileMode.Open,FileAccess.Read);
+        if(f.Read(h,0,42)<42)return null;
+        if(h[0]!='f'||h[1]!='L'||h[2]!='a'||h[3]!='C')return null;
+        int sr=(h[18]<<12)|(h[19]<<4)|(h[20]>>4);
+        int ch=((h[20]>>1)&0x07)+1;
+        int bd=((h[20]&0x01)<<4)|(h[21]>>4)+1;
+        return new(sr,bd,ch);}catch{return null;}
+    }
+    static OriginalFormat?ReadWav(string p){try{
+        var h=new byte[44];using var f=new FileStream(p,FileMode.Open,FileAccess.Read);
+        if(f.Read(h,0,44)<44)return null;
+        if(h[0]!='R'||h[1]!='I'||h[2]!='F'||h[3]!='F')return null;
+        return new(BitConverter.ToInt32(h,24),BitConverter.ToInt16(h,34),BitConverter.ToInt16(h,22));
+    }catch{return null;}}
+}
+
+public class FileScanner {
+    static readonly HashSet<string>Exts=new(StringComparer.OrdinalIgnoreCase){".mp3",".flac",".wav",".m4a",".alac"};
+    public List<AudioFileInfo>ScanFolder(string dir){
+        var r=new List<AudioFileInfo>();
+        try{foreach(var f in Directory.EnumerateFiles(dir,"*.*",SearchOption.AllDirectories))
+            if(Exts.Contains(Path.GetExtension(f))){var i=new FileInfo(f);r.Add(new(f,i.Name,i.Length));}
+        }catch(UnauthorizedAccessException){}catch(DirectoryNotFoundException){}
+        return r;
+    }
+}
+
+public class CutoffDetector {
+    const int N=4096,H=2048,SB=256,SF=300;
+    public(double c,double s,double[]sp,byte[]sg,int w,int h)DetectFull(float[]x,int sr){
+        int ht=SB;if(x.Length<N)return(sr/2.0,0,Array.Empty<double>(),Array.Empty<byte>(),0,ht);
+        double ny=sr/2.0;var fft=new Fft(N);var win=Window.Hann(N);
+        var am=new double[N/2];int fc=0,ss=Math.Max(1,(x.Length-N)/H/SF),sc=0;double gp=0;
+        for(int p=0;p+N<=x.Length;p+=H){
+            var fr=new float[N];Array.Copy(x,p,fr,0,N);
+            for(int i=0;i<N;i++)fr[i]*=win[i];
+            var re=new float[N];var im=new float[N];Array.Copy(fr,re,N);fft.Direct(re,im);
+            for(int i=0;i<N/2;i++){var m=Math.Sqrt(re[i]*re[i]+im[i]*im[i]);am[i]+=m;}fc++;
+            if(++sc%ss==0)for(int j=0;j<N/2;j++){double m=Math.Sqrt(re[j]*re[j]+im[j]*im[j]);if(m>gp)gp=m;}
+        }
+        if(fc==0)return(ny,0,Array.Empty<double>(),Array.Empty<byte>(),0,ht);
+        for(int i=0;i<am.Length;i++)am[i]/=fc;
+        sc=0;int fb=0,wid=Math.Min(SF,((x.Length-N)/H)/ss+1);var fl=new byte[wid*ht];
+        for(int p=0;p+N<=x.Length;p+=H){
+            var fr=new float[N];Array.Copy(x,p,fr,0,N);for(int i=0;i<N;i++)fr[i]*=win[i];
+            var re=new float[N];var im=new float[N];Array.Copy(fr,re,N);fft.Direct(re,im);
+            if(++sc%ss==0&&fb<wid){
+                double rt=(double)(N/2)/ht,rm=Math.Max(gp,1e-10);int off=fb*ht;
+                for(int j=0;j<ht;j++){
+                    int si=Math.Min((int)(j*rt),N/2-1);
+                    double m=Math.Sqrt(re[si]*re[si]+im[si]*im[si]);
+                    double db=20*Math.Log10(Math.Max(m,1e-10)/rm);
+                    fl[off+j]=(byte)Math.Max(0,Math.Min(255,(int)((db+96)/96*255)));
+                }fb++;
+            }
+        }
+        var(r,rs)=FindCutoff(am,ny,sr);return(r,rs,am,fl,fb,ht);
+    }
+    public double DetectCutoff(float[]x,int sr)=>DetectFull(x,sr).c;
+    static(double c,double s)FindCutoff(double[]am,double ny,int sr){
+        double pm=0;for(int i=0;i<am.Length/6;i++)pm=Math.Max(pm,am[i]);if(pm<=0)return(ny,0);
+        double td=sr>=88200?-65:-60,tm=pm*Math.Pow(10,td/20);int sb=am.Length/3,cb=am.Length-1;
+        for(int b=am.Length-1;b>=sb;b--)if(am[b]>tm){cb=b;break;}
+        double c=(double)cb/am.Length*ny;return(c,MeasureCutoffSlope(am,pm,cb,ny));
+    }
+    static double MeasureCutoffSlope(double[]am,double pm,int cb,double ny){
+        int sa=Math.Max(1,cb-15),se=Math.Min(cb+15,am.Length-1);if(se-sa<5)return 0;
+        double fb=ny/am.Length,sx=0,sy=0,sxy=0,sx2=0;int n=0;
+        for(int b=sa;b<se;b++){
+            double f=b*fb;if(f<1)continue;
+            double x=Math.Log2(f/1000),y=20*Math.Log10(Math.Max(am[b],1e-10)/pm);
+            sx+=x;sy+=y;sxy+=x*y;sx2+=x*x;n++;
+        }
+        if(n<3||Math.Abs(n*sx2-sx*sx)<1e-10)return 0;
+        return(n*sxy-sx*sy)/(n*sx2-sx*sx);
+    }
+}
+
+public class ArtifactDetector {
+    const int N=4096,H=1024;
+    public(bool h,string l)Detect(float[]x,int sr,double cf){
+        if(x.Length<N*2)return(false,"None");
+        double ny=sr/2.0;int cb=(int)(cf/ny*(N/2));cb=Math.Max(1,Math.Min(cb,N/2-1));
+        var fft=new Fft(N);var win=Window.Hann(N);double tf=0,ts=0;int fc=0;
+        for(int p=0;p+N<=x.Length;p+=H){
+            var fr=new float[N];Array.Copy(x,p,fr,0,N);for(int i=0;i<N;i++)fr[i]*=win[i];
+            var re=new float[N];var im=new float[N];Array.Copy(fr,re,N);fft.Direct(re,im);
+            var mg=new double[N/2];for(int i=0;i<N/2;i++)mg[i]=Math.Sqrt(re[i]*re[i]+im[i]*im[i]);
+            int ab=cb,ae=Math.Min(cb+80,mg.Length-1);
+            if(ae>ab+10){double gm=0,am=0;int cn=0;
+                for(int i=ab;i<ae;i++){var v=Math.Max(mg[i],1e-10);gm+=Math.Log(v);am+=v;cn++;}
+                if(cn>0&&am>0){gm=Math.Exp(gm/cn);am/=cn;tf+=gm/am;}
+            }
+            int ss=Math.Max(1,cb-40),se=Math.Min(cb+40,mg.Length-1);
+            if(se-ss>10){double sx=0,sy=0,sxy=0,sx2=0;int n=0;
+                for(int i=ss;i<se;i++){
+                    double x=i,yd=20*Math.Log10(Math.Max(mg[i],1e-10));
+                    sx+=x;sy+=yd;sxy+=x*yd;sx2+=x*x;n++;
+                }
+                double sl=(n*sxy-sx*sy)/(n*sx2-sx*sx);ts+=sl;
+            }
+            fc++;
+        }
+        if(fc==0)return(false,"None");
+        double af=tf/fc,as=ts/fc;
+        if(af>0.4&&as<-0.1)return(true,"Strong");
+        if(af>0.25&&as<-0.06)return(true,"Medium");
+        if(af>0.1||as<-0.04)return(true,"Weak");
+        return(false,"None");
+    }
+}
+
+public class DrMeter {
+    const double BD=0.5,TP=0.2;
+    public(double d,double tp,double cp)Analyze(float[]x,int sr){
+        int bs=(int)(sr*BD);if(bs<1||x.Length<bs)return(0,0,0);
+        var bd=new List<double>();double tl=double.MinValue;int cs=0;
+        for(int p=0;p<x.Length;p+=bs){
+            int l=Math.Min(bs,x.Length-p);double ss=0;
+            for(int i=p;i<p+l;i++){
+                var a=Math.Abs(x[i]);if(a>tl)tl=a;if(a>=1)cs++;ss+=x[i]*x[i];
+            }
+            bd.Add(20*Math.Log10(Math.Max(Math.Sqrt(ss/l),1e-10)));
+        }
+        double tpd=tl>double.MinValue?20*Math.Log10(Math.Max(tl,1e-10)):0;
+        double cpp=(double)cs/x.Length*100;
+        bd.Sort((a,b)=>b.CompareTo(a));int tc=Math.Max(1,(int)(bd.Count*TP));
+        double dl=bd.Take(tc).Average(),tsq=0;
+        for(int i=0;i<x.Length;i++)tsq+=x[i]*x[i];
+        double or=Math.Sqrt(tsq/x.Length),dao=20*Math.Log10(Math.Max(or,1e-10));
+        return(Math.Round(dl-dao,1),Math.Round(tpd,1),Math.Round(cpp,2));
+    }
+}
+
+public class BitDepthValidator {
+    public(bool s,string v,double n)Validate(float[]x,int cbd,int sr){
+        if(x.Length<sr)return(false,"Too short",0);
+        int bs=sr/10;var br=new List<double>();
+        for(int p=0;p+bs<=x.Length;p+=bs){double ss=0;for(int i=p;i<p+bs;i++)ss+=x[i]*x[i];br.Add(Math.Sqrt(ss/bs));}
+        if(br.Count<5)return(false,"Insufficient blocks",0);
+        br.Sort();int qc=Math.Max(1,br.Count/10);double qr=br.Take(qc).Average(),nf=20*Math.Log10(Math.Max(qr,1e-10));
+        int ef=cbd*-6;double tol=16;
+        if(nf>ef+tol){int eb=(int)Math.Round(-nf/6);return(true,$"Claimed {cbd}-bit, noise floor {nf:F0} dB = ~{eb}-bit. Padded.",nf);}
+        return(false,$"{cbd}-bit ok (noise floor {nf:F0} dB).",nf);
+    }
+}
+
+public class UpscaleDetector {
+    public(bool u,string v,double m)Detect(double[]sp,int sr){
+        int ny=sr/2;if(ny<=22050)return(false,"Standard SR.",0);
+        int ba=(int)((ny-22050.0)/ny*sp.Length),sb=sp.Length-ba;
+        if(sb>=sp.Length||sb<1)return(false,"Insufficient bins.",0);
+        double pb=0;for(int i=0;i<sb/2;i++)pb=Math.Max(pb,sp[i]);if(pb<=0)return(false,"No reference.",0);
+        double mh=0;for(int i=sb;i<sp.Length;i++)mh=Math.Max(mh,sp[i]);
+        double md=20*Math.Log10(Math.Max(mh,1e-10)/pb);
+        if(md<-50)return(true,$"Hi-Res({sr}) no content >22kHz ({md:F0}dB). Likely upscale.",md);
+        if(md<-30)return(true,$"Weak HF >22kHz ({md:F0}dB). Questionable.",md);
+        return(false,$"Valid Hi-Res >22kHz ({md:F0}dB).",md);
+    }
+}
+
+public class ScoreCalculator {
+    public AnalysisResult Calculate(AnalysisResult r){
+        double ny=r.SampleRate/2.0,cr=ny>0?r.CutoffFrequency/ny:1,cp;
+        if(r.SampleRate>=88200)cp=r.CutoffFrequency switch{>=30000=>0,>=23000=>2,>=20000=>5,>=16000=>20,>=12000=>35,_=>45};
+        else if(r.SampleRate>=44100)cp=r.CutoffFrequency switch{>=20000=>0,>=18000=>5,>=16000=>18,>=14000=>32,>=10000=>45,_=>55};
+        else{double ra=r.CutoffFrequency/Math.Max(ny,1);cp=ra switch{>=0.90=>0,>=0.80=>5,>=0.65=>18,>=0.50=>32,_=>45};}
+        if(r.CutoffSlope<-20&&cr<0.85)cp=Math.Min(50,cp+10);
+        double ap=r.ArtifactLevel switch{"None"=>0,"Weak"=>6,"Medium"=>15,"Strong"=>30,_=>0};
+        double clp=r.ClippingPercent switch{<=0=>0,<0.5=>1,<2=>5,<5=>10,_=>18};
+        double dp=r.DynamicRange switch{>=8=>0,>=6=>r.ClippingPercent>1?3:1,>=4=>r.ClippingPercent>1?6:2,_=>r.ClippingPercent>1?10:4};
+        double up=r.IsUpscale?20:0,sp=0;if(r.CutoffSlope<-18&&r.CutoffFrequency<20000)sp=8;
+        double bp=r.BitDepthSuspicious?10:0;
+        double sc=Math.Max(0,Math.Min(100,100-cp-ap-clp-dp-up-sp-bp));
+        string st=sc switch{>=90=>"Lossless/Excellent",>=75=>"Lossless/Good",>=55=>"Suspicious",_=>"Fake/Poor"};
+        return r with{LosslessScore=Math.Round(sc,1),Status=st};
+    }
+}
+
+public class VerdictGenerator {
+    public string Generate(AnalysisResult r){
+        var l=new List<string>();double ny=r.SampleRate/2.0,cr=ny>0?r.CutoffFrequency/ny:1;
+        if(cr>=0.90)l.Add($"{r.CutoffFrequency:F0}Hz ({cr*100:F0}% Nyquist) — full spectrum.");
+        else if(cr>=0.82)l.Add($"Gentle rolloff at {r.CutoffFrequency:F0}Hz ({cr*100:F0}% Nyquist) — natural.");
+        else if(cr>=0.72)l.Add($"Moderate cutoff at {r.CutoffFrequency:F0}Hz ({cr*100:F0}% Nyquist).");
+        else if(cr>=0.60)l.Add($"Brickwall at {r.CutoffFrequency:F0}Hz — likely 192-256kbps transcode.");
+        else if(cr>=0.45)l.Add($"Severe brickwall at {r.CutoffFrequency:F0}Hz — 128-160kbps MP3/AAC.");
+        else l.Add($"Extreme lowpass at {r.CutoffFrequency:F0}Hz — very low bitrate.");
+        if(r.ArtifactLevel=="Strong")l.Add("Strong block-boundary artifacts — definitive lossy encoder.");
+        else if(r.ArtifactLevel=="Medium")l.Add("Medium encoder artifacts: shelf-like noise floor.");
+        else if(r.ArtifactLevel=="Weak")l.Add("Weak artifacts: minor spectral anomalies.");
+        if(r.DynamicRange>=12)l.Add($"Excellent DR{r.DynamicRange:F0}.");
+        else if(r.DynamicRange>=9)l.Add($"Good DR{r.DynamicRange:F0}.");
+        else if(r.DynamicRange>=7)l.Add($"Average DR{r.DynamicRange:F0}.");
+        else if(r.DynamicRange>=5)l.Add($"Below-avg DR{r.DynamicRange:F0}. Compressed.");
+        else l.Add($"Very low DR{r.DynamicRange:F0}. Loudness war.");
+        if(r.ClippingPercent>5)l.Add($"Severe clipping: {r.ClippingPercent:F1}% at 0dBFS.");
+        else if(r.ClippingPercent>1)l.Add($"Noticeable clipping: {r.ClippingPercent:F1}%.");
+        else if(r.ClippingPercent>0)l.Add($"Minor clipping: {r.ClippingPercent:F2}%.");
+        if(r.BitDepthSuspicious)l.Add(r.BitDepthVerdict);
+        if(r.IsUpscale)l.Add(r.UpscaleVerdict);
+        if(r.TruePeak>0)l.Add($"TruePeak +{r.TruePeak:F1}dBTP — ISP may clip.");
+        return string.Join(" ",l);
+    }
+}
+
+public class AudioAnalyzer {
+    readonly CutoffDetector _cd=new();readonly ArtifactDetector _ad=new();
+    readonly DrMeter _dm=new();readonly ScoreCalculator _sc=new();
+    readonly BitDepthValidator _bv=new();readonly UpscaleDetector _ud=new();
+    readonly VerdictGenerator _vg=new();
+    public AnalysisResult Analyze(AudioFileInfo fi,CancellationToken ct=default){
+        var r=new AnalysisResult{FilePath=fi.FilePath,FileName=fi.FileName,AnalysisStatus=AnalysisStatus.Processing};
+        try{
+            using var rd=CreateReader(fi.FilePath);if(rd==null)return Err(r,"Unsupported format");
+            var fmt=rd.WaveFormat;var of=AudioFormatReader.ReadOriginal(fi.FilePath);
+            int abd=of?.BitDepth??fmt.BitsPerSample,asr=of?.SampleRate??fmt.SampleRate;
+            r=r with{Format=GetLabel(fi.FilePath,fmt,abd),SampleRate=asr,BitDepth=abd};
+            if(ct.IsCancellationRequested)return Err(r,"Cancelled");
+            var x=DecodeToMono(rd);if(ct.IsCancellationRequested)return Err(r,"Cancelled");
+            double dur=x.Length/(double)fmt.SampleRate;r=r with{DurationSeconds=Math.Round(dur,1)};
+            if(dur<5)return r with{AnalysisStatus=AnalysisStatus.Completed,Status="Too short",LosslessScore=50,Verdict="<5s"};
+            if(ct.IsCancellationRequested)return Err(r,"Cancelled");
+            var(co,cs,sp,sg,sw,sh)=_cd.DetectFull(x,fmt.SampleRate);
+            if(ct.IsCancellationRequested)return Err(r,"Cancelled");
+            var(ha,al)=_ad.Detect(x,fmt.SampleRate,co);
+            if(ct.IsCancellationRequested)return Err(r,"Cancelled");
+            var(dr,tp,cp)=_dm.Analyze(x,fmt.SampleRate);
+            var(bs,bv,nf)=_bv.Validate(x,fmt.BitsPerSample,fmt.SampleRate);
+            var(iu,uv,mh)=_ud.Detect(sp,fmt.SampleRate);
+            r=r with{CutoffFrequency=Math.Round(co,0),CutoffSlope=Math.Round(cs,2),HasArtifacts=ha,ArtifactLevel=al,
+                DynamicRange=Math.Round(dr,1),TruePeak=Math.Round(tp,1),ClippingPercent=Math.Round(cp,2),
+                AveragedSpectrum=sp,SpectrogramFlat=sg,SpectrogramWidth=sw,SpectrogramHeight=sh,
+                BitDepthSuspicious=bs,NoiseFloorDb=Math.Round(nf,1),BitDepthVerdict=bv,
+                IsUpscale=iu,MaxHfDb=Math.Round(mh,1),UpscaleVerdict=uv};
+            r=_sc.Calculate(r);return r with{Verdict=_vg.Generate(r),AnalysisStatus=AnalysisStatus.Completed};
+        }catch(Exception ex){return Err(r,ex.Message);}
+    }
+    static float[]DecodeToMono(WaveStream rd){
+        ISampleProvider pr;if(rd.WaveFormat.Channels>1){using var rs=new MediaFoundationResampler(rd,new WaveFormat(rd.WaveFormat.SampleRate,16,1));pr=rs.ToSampleProvider();}
+        else pr=rd.ToSampleProvider();
+        var x=new List<float>((int)(rd.TotalTime.TotalSeconds*rd.WaveFormat.SampleRate));var b=new float[4096];int n;
+        while((n=pr.Read(b,0,b.Length))>0)for(int i=0;i<n;i++)x.Add(b[i]);return x.ToArray();
+    }
+    static WaveStream?CreateReader(string p)=>Path.GetExtension(p).ToLowerInvariant() switch{".mp3"=>new Mp3FileReader(p),".wav"=>new WaveFileReader(p),".flac"=>new AudioFileReader(p),".m4a"or".alac"=>new AudioFileReader(p),_=>null};
+    static string GetLabel(string p,WaveFormat f,int bd)=>$"{Path.GetExtension(p).ToUpperInvariant().TrimStart('.')} {f.SampleRate/1000.0:F0}kHz/{bd}bit";
+    static AnalysisResult Err(AnalysisResult r,string m)=>r with{AnalysisStatus=AnalysisStatus.Error,ErrorMessage=m};
+}

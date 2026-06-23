@@ -23,23 +23,35 @@ public static class AudioFormatReader
         {
             var header = new byte[42];
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-            if (fs.Read(header, 0, header.Length) < header.Length)
-                return null;
+            if (fs.Read(header, 0, 4) < 4) return null;
+
+            // Skip ID3v2 tag if present (some tools prepend ID3 to FLAC)
+            if (header[0] == 'I' && header[1] == 'D' && header[2] == '3')
+            {
+                var id3hdr = new byte[6];
+                if (fs.Read(id3hdr, 0, 6) < 6) return null;
+                int id3Size = ((id3hdr[2] & 0x7F) << 21) | ((id3hdr[3] & 0x7F) << 14)
+                            | ((id3hdr[4] & 0x7F) << 7) | (id3hdr[5] & 0x7F);
+                fs.Seek(id3Size, SeekOrigin.Current);
+                if (fs.Read(header, 0, 42) < 42) return null;
+            }
+            else
+            {
+                // Seek back and read full STREAMINFO
+                fs.Seek(0, SeekOrigin.Begin);
+                if (fs.Read(header, 0, header.Length) < header.Length) return null;
+            }
 
             if (header[0] != 'f' || header[1] != 'L' || header[2] != 'a' || header[3] != 'C')
                 return null;
 
-            // STREAMINFO starts at byte 8 (after 4-byte magic + 4-byte metadata block header)
             int sampleRate = (header[18] << 12) | (header[19] << 4) | (header[20] >> 4);
             int channels = ((header[20] >> 1) & 0x07) + 1;
             int bitDepth = ((header[20] & 0x01) << 4) | (header[21] >> 4) + 1;
 
             return new OriginalFormat(sampleRate, bitDepth, channels);
         }
-        catch
-        {
-            return null;
-        }
+        catch { return null; }
     }
 
     private static OriginalFormat? ReadWav(string filePath)
