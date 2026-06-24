@@ -88,7 +88,7 @@ public partial class MainViewModel : ObservableObject
         bool matchesVerdict =
             ((f.VerdictLabel == "LOSSLESS" || f.VerdictLabel == "HI-RES") && ShowKeep) ||
             (f.VerdictLabel == "NOT SURE" && ShowInvestigate) ||
-            (f.VerdictLabel == "REPLACE" && ShowReplace) ||
+            ((f.VerdictLabel == "REPLACE" || f.VerdictLabel.StartsWith("MP3")) && ShowReplace) ||
             (f.VerdictLabel.StartsWith("MP3") && ShowMp3);
 
         return matchesVerdict;

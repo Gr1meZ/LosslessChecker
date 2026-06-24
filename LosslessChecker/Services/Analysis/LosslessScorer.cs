@@ -62,9 +62,8 @@ public class LosslessScorer
     public string Classify(AnalysisResult r)
     {
         var s = Score(r);
-        if (s >= 90) return "TRUE LOSSLESS";
-        if (s >= _p.TrueLosslessThreshold) return "TRUE LOSSLESS";
-        if (s >= _p.SuspiciousThreshold) return "SUSPICIOUS";
-        return "FAKE LOSSLESS";
+        if (s >= _p.TrueLosslessThreshold) return "TRUE";
+        if (s >= _p.SuspiciousThreshold) return "UNCERTAIN";
+        return "FALSE";
     }
 }

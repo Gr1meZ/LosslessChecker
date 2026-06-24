@@ -13,7 +13,7 @@ public class QualityScorerTests
     {
         var r = new AnalysisResult
         {
-            Authenticity = "TRUE LOSSLESS", DynamicRange = 14, ClippingPercent = 0,
+            Authenticity = "TRUE", DynamicRange = 14, ClippingPercent = 0,
             HasIsp = false, IntegratedLufs = -18,
             DcOffsetL = 0, DcOffsetR = 0, Correlation = 1.0, LsbZeroPadded = false
         };
@@ -27,7 +27,7 @@ public class QualityScorerTests
     {
         var r = new AnalysisResult
         {
-            Authenticity = "TRUE LOSSLESS", DynamicRange = 4, ClippingPercent = 2.0,
+            Authenticity = "TRUE", DynamicRange = 4, ClippingPercent = 2.0,
             HasIsp = true, TruePeakDb = 1.5, IntegratedLufs = -6,
             DcOffsetL = 0, DcOffsetR = 0, Correlation = 1.0, LsbZeroPadded = false
         };
@@ -41,7 +41,7 @@ public class QualityScorerTests
     {
         var r = new AnalysisResult
         {
-            Authenticity = "FAKE LOSSLESS", DynamicRange = 12, ClippingPercent = 0,
+            Authenticity = "FALSE", DynamicRange = 12, ClippingPercent = 0,
             HasIsp = false, IntegratedLufs = -14,
             DcOffsetL = 0, DcOffsetR = 0, Correlation = 1.0, LsbZeroPadded = false
         };
@@ -54,7 +54,7 @@ public class QualityScorerTests
     {
         var r = new AnalysisResult
         {
-            Authenticity = "TRUE LOSSLESS", DynamicRange = 2, ClippingPercent = 10.0,
+            Authenticity = "TRUE", DynamicRange = 2, ClippingPercent = 10.0,
             HasIsp = true, TruePeakDb = 2.0, IntegratedLufs = -4,
             DcOffsetL = 0.01, Correlation = -0.5, LsbZeroPadded = true
         };
@@ -68,7 +68,7 @@ public class QualityScorerTests
     {
         var r = new AnalysisResult
         {
-            Authenticity = "SUSPICIOUS", DynamicRange = 12, ClippingPercent = 0,
+            Authenticity = "UNCERTAIN", DynamicRange = 12, ClippingPercent = 0,
             HasIsp = false, IntegratedLufs = -14,
             DcOffsetL = 0, DcOffsetR = 0, Correlation = 1.0, LsbZeroPadded = false
         };

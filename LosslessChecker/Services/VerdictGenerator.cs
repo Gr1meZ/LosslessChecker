@@ -12,13 +12,13 @@ public class VerdictGenerator
         // Section 1
         string authRu = r.Authenticity switch
         {
-            "TRUE LOSSLESS" => "НАСТОЯЩИЙ LOSSLESS",
-            "SUSPICIOUS" => "ПОДОЗРИТЕЛЬНЫЙ",
-            "FAKE LOSSLESS" => "ФЕЙК (ПЕРЕЖАТ ИЗ LOSSY)",
-            "FAKE HI-RES" => "ФЕЙК HI-RES (АПСКЕЙЛ ИЗ CD)",
+            "TRUE" => "TRUE LOSSLESS",
+            "UNCERTAIN" => "UNCERTAIN",
+            "FALSE" => "FALSE LOSSLESS",
+            "LOSSY (MP3)" => "LOSSY (MP3)",
             _ => r.Authenticity
         };
-        sb.Append("1. СТАТУС LOSSLESS: ").Append(authRu);
+        sb.Append("1. СТАТУС: ").Append(authRu);
         sb.Append(" | срез на ").Append($"{r.CutoffFrequency:F0} Гц");
         if (r.ShelfType.Length > 0)
         {
@@ -88,12 +88,14 @@ public class VerdictGenerator
             _ => r.Decision
         };
         sb.Append(decRu);
-        if (r.QualityScorePercent >= 70 && r.Authenticity == "TRUE LOSSLESS")
+        if (r.QualityScorePercent >= 70 && r.Authenticity == "TRUE")
             sb.Append(" — Отличный мастеринг, подлинный lossless");
-        else if (r.Authenticity == "TRUE LOSSLESS" && r.QualityScorePercent < 40)
+        else if (r.Authenticity == "TRUE" && r.QualityScorePercent < 40)
             sb.Append(" — Подлинный, но плохо смастеренный");
-        else if (r.Authenticity.StartsWith("FAKE"))
+        else if (r.Authenticity == "FALSE")
             sb.Append(" — Не подлинный, ищите оригинал");
+        else if (r.Authenticity == "LOSSY (MP3)")
+            sb.Append(" — Lossy-формат, оценка по качеству MP3");
 
         return sb.ToString();
     }
@@ -118,8 +120,9 @@ public class VerdictGenerator
         if (r.HasArtifacts) sb.Append(". Артефакты: ").Append(r.ArtifactLevel);
         else sb.Append(". Артефакты не обнаружены");
 
-        if (r.Authenticity == "TRUE LOSSLESS") sb.Append(". Подлинный lossless.");
-        else if (r.Authenticity == "SUSPICIOUS") sb.Append(". Подозрительный — проверьте источник.");
+        if (r.Authenticity == "TRUE") sb.Append(". Подлинный lossless.");
+        else if (r.Authenticity == "UNCERTAIN") sb.Append(". Подозрительный — проверьте источник.");
+        else if (r.Authenticity == "LOSSY (MP3)") sb.Append(". Lossy-формат (MP3).");
         else sb.Append(". Фейк — пережат из lossy.");
 
         return sb.ToString();

@@ -150,7 +150,7 @@ public partial class AudioFileViewModel : ObservableObject
     private void BuildMetricItems(AnalysisResult r)
     {
         var items = new ObservableCollection<MetricItem>();
-        var isLossless = r.Authenticity == "TRUE LOSSLESS";
+        var isLossless = r.Authenticity == "TRUE";
         var nyquist = r.SampleRate / 2.0;
 
         // === Group: Спектральный анализ ===
@@ -475,15 +475,16 @@ public partial class AudioFileViewModel : ObservableObject
         // Lossless Score
         string losslessStatus = r.LosslessScore >= 85 ? "✓ Отлично" : r.LosslessScore >= 60 ? "⚠ Средне" : "✗ Плохо";
         string losslessColor = r.LosslessScore >= 85 ? "#2EA043" : r.LosslessScore >= 60 ? "#D29922" : "#CF222E";
+        string losslessLabel = r.Authenticity == "LOSSY (MP3)" ? "LOSSY (MP3)" : r.Authenticity;
         items.Add(new MetricItem
         {
             Category = "Итог",
-            Name = "Подлинность Lossless",
-            Value = $"{r.LosslessScore:F0}%",
+            Name = "Подлинность",
+            Value = losslessLabel,
             Status = losslessStatus,
             StatusColor = losslessColor,
-            Description = "Оценка подлинности lossless-файла (0–100%). Учитывает частотный срез, артефакты сжатия, характер спада, битовую глубину, апскейл. Высокий % = настоящий рип с CD/винила/студии.",
-            Typical = "85–100% — настоящий lossless\n60–84% — подозрительный\n<60% — фейк, пережат из lossy"
+            Description = "Оценка подлинности аудиофайла. TRUE — настоящий lossless. FALSE — фейк, пережат из lossy. UNCERTAIN — подозрительный. LOSSY (MP3) — легальный lossy-формат.",
+            Typical = "TRUE — настоящий lossless\nUNCERTAIN — подозрительный\nFALSE — фейк\nLOSSY (MP3) — MP3-файл"
         });
 
         // Hi-Res Score (only for Hi-Res files)

@@ -37,7 +37,7 @@ public class ScoringProfile
     public int HiResUpscalePenalty { get; init; } = 40;
 
     // Quality scoring
-    public (double threshold, int penalty)[] DrThresholds { get; init; } = { (3, 25), (5, 15), (6, 8) };
+    public (double threshold, int penalty)[] DrThresholds { get; init; } = { (1, 70), (2, 45), (3, 25), (5, 15), (6, 8) };
     public (double threshold, int penalty)[] ClippingThresholds { get; init; } = { (5, 20), (2, 12), (0.5, 6), (0, 2) };
     public (double threshold, int penalty)[] LufsThresholds { get; init; } = { (-7, 15), (-10, 8), (-14, 3) };
     public int IspBasePenalty { get; init; } = 8;

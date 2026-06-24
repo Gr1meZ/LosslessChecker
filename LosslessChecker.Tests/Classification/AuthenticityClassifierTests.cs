@@ -28,14 +28,14 @@ public class LosslessScorerTests
     public void Classify_TrueLossless_HfCutoff_ReturnsTrue()
     {
         var r = new AnalysisResult { CutoffFrequency = 21800, SampleRate = 44100, ShelfType = "Natural", HasArtifacts = false };
-        Assert.Equal("TRUE LOSSLESS", _scorer.Classify(r));
+        Assert.Equal("TRUE", _scorer.Classify(r));
     }
 
     [Fact]
     public void Classify_FakeLossless_16kHz_WithArtifacts_ReturnsFake()
     {
         var r = new AnalysisResult { CutoffFrequency = 16000, HasArtifacts = true, ShelfType = "Brickwall", SampleRate = 44100 };
-        Assert.Equal("FAKE LOSSLESS", _scorer.Classify(r));
+        Assert.Equal("FALSE", _scorer.Classify(r));
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class LosslessScorerTests
     {
         var r = new AnalysisResult { CutoffFrequency = 20500, SampleRate = 44100, HasArtifacts = false, ShelfType = "Natural" };
         var result = _scorer.Classify(r);
-        Assert.True(result == "SUSPICIOUS" || result == "TRUE LOSSLESS");
+        Assert.True(result == "UNCERTAIN" || result == "TRUE");
     }
 
     [Fact]

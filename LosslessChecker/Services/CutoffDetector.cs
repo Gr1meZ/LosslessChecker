@@ -17,12 +17,14 @@ public class CutoffDetector
 
         var fft = new Fft(FftSize);
         var window = Window.Hann(FftSize);
-        var avgPower = new double[FftSize / 2];
-        int frameCount = 0;
 
         var frame = new float[FftSize];
         var real = new float[FftSize];
         var imag = new float[FftSize];
+
+        int hfStartBin = (int)(10000.0 / nyquist * (FftSize / 2));
+
+        var framePowers = new List<(int pos, double[] power, double hfEnergy)>();
 
         for (int pos = 0; pos + FftSize <= samples.Length; pos += HopSize)
         {
@@ -31,17 +33,31 @@ public class CutoffDetector
             Array.Copy(frame, real, FftSize);
             Array.Clear(imag, 0, FftSize);
             fft.Direct(real, imag);
+
+            var power = new double[FftSize / 2];
+            double hfEnergy = 0;
             for (int i = 0; i < FftSize / 2; i++)
-                avgPower[i] += (double)real[i] * real[i] + (double)imag[i] * imag[i];
-            frameCount++;
+            {
+                power[i] = (double)real[i] * real[i] + (double)imag[i] * imag[i];
+                if (i >= hfStartBin) hfEnergy += power[i];
+            }
+            framePowers.Add((pos, power, hfEnergy));
         }
 
-        if (frameCount == 0)
+        if (framePowers.Count == 0)
             return (nyquist, 0, Array.Empty<double>());
 
+        var sortedByHf = framePowers.OrderByDescending(f => f.hfEnergy).ToList();
+        int topCount = Math.Max(1, sortedByHf.Count / 6);
+        var topFrames = sortedByHf.Take(topCount).ToList();
+
         var avgMagnitudes = new double[FftSize / 2];
-        for (int i = 0; i < avgPower.Length; i++)
-            avgMagnitudes[i] = Math.Sqrt(avgPower[i] / frameCount);
+        foreach (var (_, power, _) in topFrames)
+            for (int i = 0; i < FftSize / 2; i++)
+                avgMagnitudes[i] += power[i];
+
+        for (int i = 0; i < avgMagnitudes.Length; i++)
+            avgMagnitudes[i] = Math.Sqrt(avgMagnitudes[i] / topFrames.Count);
 
         var (cutoff, cutoffSlope) = FindCutoffByDerivative(avgMagnitudes, nyquist);
         return (cutoff, cutoffSlope, avgMagnitudes);
@@ -135,7 +151,7 @@ public class CutoffDetector
             // Weight: slopes at higher frequencies get a bonus (more negative weight).
             // A -20 dB/oct at 20 kHz beats a -25 dB/oct at 8 kHz.
             double freqWeight = (double)center / bins;
-            double weightedSlope = slope * (0.8 + 0.2 * freqWeight);
+            double weightedSlope = slope * (0.5 + 0.5 * freqWeight);
 
             if (weightedSlope < bestWeightedSlope)
             {
@@ -145,14 +161,30 @@ public class CutoffDetector
             }
         }
 
-        // 5. Classify based on slope
+        bool isBrickwall = bestRawSlope < -18;
+        if (isBrickwall && bestBin > 0 && bestBin < bins - 1)
+        {
+            int beforeStart = Math.Max(1, bestBin - 40);
+            int afterEnd = Math.Min(bins - 1, bestBin + 40);
+            double beforeAvg = 0, afterAvg = 0;
+            int beforeCount = 0, afterCount = 0;
+            for (int i = beforeStart; i < bestBin; i++) { beforeAvg += smoothed[i]; beforeCount++; }
+            for (int i = bestBin + 1; i <= afterEnd; i++) { afterAvg += smoothed[i]; afterCount++; }
+            beforeAvg = beforeCount > 0 ? beforeAvg / beforeCount : -100;
+            afterAvg = afterCount > 0 ? afterAvg / afterCount : -100;
+
+            if (beforeAvg - afterAvg < 12 || afterAvg > beforeAvg - 12)
+                isBrickwall = false;
+        }
+
         double cutoffHz;
-        if (bestRawSlope < -18)
+        if (isBrickwall)
         {
             cutoffHz = SubBinFrequency(bestBin, bins, nyquist, smoothed);
         }
         else if (bestRawSlope < -10)
         {
+            if (bestRawSlope < -18) bestRawSlope = -14;
             cutoffHz = SubBinFrequency(bestBin, bins, nyquist, smoothed);
         }
         else

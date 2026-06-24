@@ -10,12 +10,7 @@ public class AudioPipeline
 {
     private readonly CutoffDetector _cutoff = new();
     private readonly ArtifactDetector _artifacts = new();
-    private readonly TruePeakDetector _truePeak = new();
     private readonly LufsMeter _lufs = new();
-    private readonly DrMeter _dr = new();
-    private readonly DcOffsetDetector _dcOffset = new();
-    private readonly PhaseAnalyzer _phase = new();
-    private readonly BitDepthValidator _bitDepth = new();
     private readonly UpscaleDetector _upscale = new();
     private readonly SpectrogramBuilder _spectro = new();
     private readonly ResamplingDetector _resampling = new();
@@ -104,12 +99,17 @@ public class AudioPipeline
             if (ct.IsCancellationRequested) return Cancelled(result);
 
             var artifactTask = Task.Run(() => _artifacts.Detect(mono, sampleRate, cutoffHz), ct);
-            var tpTask = Task.Run(() => _truePeak.Analyze(buffer), ct);
+            var truePeak = new Analyzers.TruePeakDetector();
+            var dr = new DrMeter();
+            var dcOffset = new Analyzers.DcOffsetDetector();
+            var phase = new Analyzers.PhaseAnalyzer();
+            var bitDepthValidator = new BitDepthValidator();
+            var tpTask = Task.Run(() => truePeak.Analyze(buffer), ct);
             var lufsTask = Task.Run(() => _lufs.Analyze(buffer), ct);
-            var drTask = Task.Run(() => _dr.AnalyzeStereo(buffer), ct);
-            var dcTask = Task.Run(() => _dcOffset.Analyze(buffer), ct);
-            var phaseTask = Task.Run(() => _phase.Analyze(buffer), ct);
-            var bitTask = Task.Run(() => _bitDepth.ValidateStereo(buffer, bitDepth), ct);
+            var drTask = Task.Run(() => dr.AnalyzeStereo(buffer), ct);
+            var dcTask = Task.Run(() => dcOffset.Analyze(buffer), ct);
+            var phaseTask = Task.Run(() => phase.Analyze(buffer), ct);
+            var bitTask = Task.Run(() => bitDepthValidator.ValidateStereo(buffer, bitDepth), ct);
             var spectroTask = Task.Run(() => _spectro.Build(mono, sampleRate), ct);
 
             var (isUpscale, upscaleVerdict, maxHfDb) = _upscale.Detect(spectrum, sampleRate);
@@ -185,17 +185,42 @@ public class AudioPipeline
                 Mp3Encoder = mp3Encoder
             };
 
-            result = result with { Authenticity = _losslessScorer.Classify(result) };
+            bool isMp3 = fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
 
             double mp3QualityScore = 0;
-            if (fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) && mp3Bitrate > 0)
+            if (isMp3 && mp3Bitrate > 0)
             {
                 mp3QualityScore = ComputeMp3Quality(cutoffHz, sampleRate, mp3Bitrate, artifactLevel, hasSpectralHoles);
             }
 
-            var losslessScore = _losslessScorer.Score(result);
+            if (isMp3)
+            {
+                result = result with { Authenticity = "LOSSY (MP3)" };
+            }
+            else
+            {
+                result = result with { Authenticity = _losslessScorer.Classify(result) };
+            }
+
+            var losslessScore = isMp3 ? mp3QualityScore : _losslessScorer.Score(result);
             var hiResScore = _losslessScorer.ScoreHiRes(result);
-            var (qualityPercent, decision) = _qualityScorer.Score(result);
+
+            double qualityPercent;
+            string decision;
+
+            if (isMp3)
+            {
+                var (masterScore, _) = _qualityScorer.Score(result);
+                qualityPercent = mp3QualityScore * 0.6 + masterScore * 0.4;
+                decision = mp3QualityScore >= 80 ? "KEEP"
+                    : mp3QualityScore >= 50 ? "INVESTIGATE"
+                    : "REPLACE";
+            }
+            else
+            {
+                (qualityPercent, decision) = _qualityScorer.Score(result);
+            }
+
             result = result with
             {
                 LosslessScore = Math.Round(losslessScore, 1),

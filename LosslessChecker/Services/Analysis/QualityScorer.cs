@@ -38,13 +38,13 @@ public class QualityScorer
         score = Math.Max(0, Math.Min(100, score));
 
         string decision;
-        if (r.Authenticity == "TRUE LOSSLESS")
+        if (r.Authenticity == "TRUE")
         {
             if (score >= _p.QualityExcellentThreshold) decision = "KEEP";
             else if (score >= _p.QualityKeepThreshold) decision = "KEEP";
             else decision = "KEEP (poor master)";
         }
-        else if (r.Authenticity == "SUSPICIOUS")
+        else if (r.Authenticity == "UNCERTAIN")
             decision = "INVESTIGATE";
         else
             decision = "REPLACE";
