@@ -29,6 +29,10 @@ public class AudioDecoder
                 if (ct.IsCancellationRequested) throw new OperationCanceledException();
                 for (int i = 0; i < read; i++) left.Add(buffer[i]);
             }
+
+            // Debug: log overall level
+            LogLevel("mono", left, format.SampleRate);
+
             return new StereoBuffer(left.ToArray(), Array.Empty<float>(), format.SampleRate);
         }
 
@@ -46,7 +50,33 @@ public class AudioDecoder
             }
         }
 
+        // Debug: log overall level
+        LogLevel("L", left, format.SampleRate);
+        LogLevel("R", right, format.SampleRate);
+
         return new StereoBuffer(left.ToArray(), right.ToArray(), format.SampleRate);
+    }
+
+    private static void LogLevel(string label, List<float> samples, int sampleRate)
+    {
+        try
+        {
+            var arr = samples.ToArray();
+            double sumSq = 0, maxAbs = 0;
+            for (int i = 0; i < arr.Length; i++)
+            {
+                double abs = Math.Abs(arr[i]);
+                if (abs > maxAbs) maxAbs = abs;
+                sumSq += (double)arr[i] * arr[i];
+            }
+            double rms = Math.Sqrt(sumSq / arr.Length);
+            double peakDb = 20.0 * Math.Log10(Math.Max(maxAbs, 1e-10));
+            double rmsDb = 20.0 * Math.Log10(Math.Max(rms, 1e-10));
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lossless_dr_debug.log"),
+                $"{DateTime.Now:HH:mm:ss.fff} LEVEL[{label}]: peak={peakDb:F2} rms={rmsDb:F2} nsamples={arr.Length} sr={sampleRate} first5=[{arr[0]:F6},{arr[1]:F6},{arr[2]:F6},{arr[3]:F6},{arr[4]:F6}]{Environment.NewLine}");
+        }
+        catch { }
     }
 
     public static float[] DecodeMono(string filePath, CancellationToken ct = default)
