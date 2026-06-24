@@ -145,7 +145,7 @@ public class AudioPipeline
                 OverallRmsDb = ComputeOverallRms(mono),
                 IntegratedLufs = lufsResult.IntegratedLufs,
                 LoudnessRange = lufsResult.LoudnessRange,
-                Plr = Math.Round(Math.Max(tpResult.SamplePeakDbL, tpResult.SamplePeakDbR) - lufsResult.IntegratedLufs, 1),
+                Plr = Math.Round(Math.Max(tpResult.TruePeakDbL, tpResult.TruePeakDbR) - lufsResult.IntegratedLufs, 1),
                 DcOffsetL = dcResult.DcOffsetL,
                 DcOffsetR = dcResult.DcOffsetR,
                 BitDepthSuspicious = bitResult.IsSuspicious,
