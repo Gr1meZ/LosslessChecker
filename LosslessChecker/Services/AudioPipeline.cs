@@ -120,7 +120,7 @@ public class AudioPipeline
 
             var (spectroData, spectroW, spectroH) = _spectro.Build(mono, sampleRate);
 
-            var resamplingResult = _resampling.Detect(spectroData, spectroW, spectroH, sampleRate);
+            var resamplingResult = _resampling.DetectFromSpectrum(spectrum, sampleRate);
 
             if (ct.IsCancellationRequested) return Cancelled(result);
 
