@@ -13,9 +13,6 @@ public class AudioDecoder
 
         var format = reader.WaveFormat;
         var provider = reader.ToSampleProvider();
-        int totalFrames = (int)(reader.TotalTime.TotalSeconds * format.SampleRate);
-        var left = new List<float>(totalFrames);
-        var right = new List<float>(totalFrames);
 
         if (format.Channels > 2)
             throw new NotSupportedException("Only mono and stereo files are supported");
@@ -24,66 +21,40 @@ public class AudioDecoder
         {
             var buffer = new float[4096];
             int read;
+            int totalSamples = (int)(reader.TotalTime.TotalSeconds * format.SampleRate);
+            var mono = new List<float>(totalSamples);
             while ((read = provider.Read(buffer, 0, buffer.Length)) > 0)
             {
                 if (ct.IsCancellationRequested) throw new OperationCanceledException();
-                for (int i = 0; i < read; i++) left.Add(buffer[i]);
+                for (int i = 0; i < read; i++) mono.Add(buffer[i]);
             }
-
-            return new StereoBuffer(left.ToArray(), Array.Empty<float>(), format.SampleRate);
+            return new StereoBuffer(mono.ToArray(), Array.Empty<float>(), format.SampleRate);
         }
-
-        // Stereo: interleaved L/R
-        var stereoBuffer = new float[8192];
-        int stereoRead;
-        while ((stereoRead = provider.Read(stereoBuffer, 0, stereoBuffer.Length)) > 0)
+        else
         {
-            if (ct.IsCancellationRequested) throw new OperationCanceledException();
-            for (int i = 0; i < stereoRead; i += format.Channels)
+            // Stereo: decode and mix to mono on the fly
+            var buffer = new float[8192];
+            int totalSamples = (int)(reader.TotalTime.TotalSeconds * format.SampleRate);
+            var mono = new List<float>(totalSamples);
+            int stereoRead;
+            while ((stereoRead = provider.Read(buffer, 0, buffer.Length)) > 0)
             {
-                left.Add(stereoBuffer[i]);
-                if (i + 1 < stereoRead)
-                    right.Add(stereoBuffer[i + 1]);
+                if (ct.IsCancellationRequested) throw new OperationCanceledException();
+                for (int i = 0; i < stereoRead; i += format.Channels)
+                {
+                    float s = buffer[i];
+                    if (i + 1 < stereoRead)
+                        s = (s + buffer[i + 1]) * 0.5f;
+                    mono.Add(s);
+                }
             }
+            return new StereoBuffer(mono.ToArray(), Array.Empty<float>(), format.SampleRate);
         }
-
-        // Debug: log overall level
-        LogLevel("L", left, format.SampleRate);
-        LogLevel("R", right, format.SampleRate);
-
-        return new StereoBuffer(left.ToArray(), right.ToArray(), format.SampleRate);
-    }
-
-    private static void LogLevel(string label, List<float> samples, int sampleRate)
-    {
-        try
-        {
-            var arr = samples.ToArray();
-            double sumSq = 0, maxAbs = 0;
-            for (int i = 0; i < arr.Length; i++)
-            {
-                double abs = Math.Abs(arr[i]);
-                if (abs > maxAbs) maxAbs = abs;
-                sumSq += (double)arr[i] * arr[i];
-            }
-            double rms = Math.Sqrt(sumSq / arr.Length);
-            double peakDb = 20.0 * Math.Log10(Math.Max(maxAbs, 1e-10));
-            double rmsDb = 20.0 * Math.Log10(Math.Max(rms, 1e-10));
-            System.IO.File.AppendAllText(
-                System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lossless_dr_debug.log"),
-                $"{DateTime.Now:HH:mm:ss.fff} LEVEL[{label}]: peak={peakDb:F2} rms={rmsDb:F2} nsamples={arr.Length} sr={sampleRate} first5=[{arr[0]:F6},{arr[1]:F6},{arr[2]:F6},{arr[3]:F6},{arr[4]:F6}]{Environment.NewLine}");
-        }
-        catch { }
     }
 
     public static float[] DecodeMono(string filePath, CancellationToken ct = default)
     {
-        var stereo = Decode(filePath, ct);
-        int n = stereo.Length;
-        var mono = new float[n];
-        for (int i = 0; i < n; i++)
-            mono[i] = (stereo.Left[i] + stereo.Right[i]) * 0.5f;
-        return mono;
+        return Decode(filePath, ct).Left;
     }
 
     private static WaveStream? CreateReader(string filePath)
