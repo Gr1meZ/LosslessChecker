@@ -178,6 +178,18 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="10">
 
+                        <!-- Copy button -->
+                        <Button Content="📋 Копировать таблицу"
+                                Command="{Binding SelectedFile.CopyMetricsCommand}"
+                                Height="28" Margin="0,0,0,8"
+                                Background="#45475a" Foreground="#cdd6f4"
+                                BorderThickness="0" FontSize="11"
+                                Cursor="Hand">
+                            <Button.Resources>
+                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
+                            </Button.Resources>
+                        </Button>
+
                         <!-- Spectrogram -->
                         <Border Background="#11111b" CornerRadius="6" Height="160" Margin="0,0,0,10">
                             <Grid>

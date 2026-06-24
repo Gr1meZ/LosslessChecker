@@ -1,7 +1,10 @@
 using System.Collections.ObjectModel;
+using System.Text;
+using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using LosslessChecker.Models;
 
 namespace LosslessChecker.ViewModels;
@@ -457,5 +460,41 @@ public partial class AudioFileViewModel : ObservableObject
         if (t < 0.85) { double s = (t - 0.5) / 0.35; return (255, (byte)(128 + 127 * s), (byte)(255 * s)); }
         double s2 = (t - 0.85) / 0.15;
         return (255, 255, (byte)(128 + 127 * s2));
+    }
+
+    [RelayCommand]
+    private void CopyMetrics()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"══════════════════════════════════════════");
+        sb.AppendLine($"  LosslessChecker — Анализ: {FileName}");
+        sb.AppendLine($"  {Format} | {SampleRate} Гц | {BitDepth} бит | {Channels} кан.");
+        sb.AppendLine($"══════════════════════════════════════════");
+        sb.AppendLine();
+
+        foreach (var m in MetricItems)
+        {
+            if (m.IsHeader)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"▸ {m.Name}");
+                sb.AppendLine(new string('─', 60));
+                continue;
+            }
+
+            sb.AppendLine($"  {m.Name}");
+            sb.AppendLine($"    Значение : {m.Value}");
+            sb.AppendLine($"    Статус   : {m.Status}");
+            sb.AppendLine($"    Нормы    : {m.Typical.Replace("\n", "\n              ")}");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("══════════════════════════════════════════");
+
+        try
+        {
+            System.Windows.Clipboard.SetText(sb.ToString());
+        }
+        catch { }
     }
 }
