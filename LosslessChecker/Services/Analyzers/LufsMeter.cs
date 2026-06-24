@@ -9,46 +9,56 @@ public class LufsMeter
     private const double RelativeGate = -10.0;
 
     public LufsResult Analyze(StereoBuffer buffer)
+        => AnalyzeMono(ToMono(buffer), buffer.SampleRate);
+
+    public LufsResult AnalyzeSpan(ReadOnlySpan<float> mono, int sampleRate)
+        => AnalyzeMono(mono, sampleRate);
+
+    private static LufsResult AnalyzeMono(ReadOnlySpan<float> mono, int sampleRate)
     {
-        int sampleRate = buffer.SampleRate;
         int blockSize = (int)(sampleRate * BlockDuration);
-        if (blockSize < 1 || buffer.Length < blockSize)
+        if (blockSize < 1 || mono.Length < blockSize)
             return new LufsResult(-100, 0);
+
+        double omegaHp = 2.0 * Math.PI * 38.0 / sampleRate;
+        double hpCoeff = Math.Exp(-omegaHp);
+        double omegaSh = 2.0 * Math.PI * 1500.0 / sampleRate;
+        double shCoeff = 0.5 * (1.0 - Math.Exp(-omegaSh));
 
         var blockLoudness = new List<double>();
-        int totalBlocks = 0;
+        double hpX1 = 0, hpY1 = 0, shX1 = 0;
 
-        ResetFilters();
-
-        for (int pos = 0; pos + blockSize <= buffer.Length; pos += blockSize)
+        for (int pos = 0; pos + blockSize <= mono.Length; pos += blockSize)
         {
             double sumSq = 0;
-            int len = Math.Min(blockSize, buffer.Length - pos);
-            for (int i = pos; i < pos + len; i++)
+            int end = pos + blockSize;
+            // Inlined K-weight filter — no per-sample method call overhead
+            for (int i = pos; i < end; i++)
             {
-                double sample = buffer.IsStereo
-                    ? (buffer.Left[i] + buffer.Right[i]) * 0.5
-                    : buffer.Left[i];
-                var filtered = KWeightFilter(sample);
-                sumSq += filtered * filtered;
+                double sample = mono[i];
+                double hpOut = hpCoeff * hpY1 + hpCoeff * (sample - hpX1);
+                hpX1 = sample;
+                hpY1 = hpOut;
+                double shOut = hpOut + shCoeff * (hpOut - shX1);
+                shX1 = hpOut;
+                sumSq += shOut * shOut;
             }
-            double rms = Math.Sqrt(sumSq / len);
+            double rms = Math.Sqrt(sumSq / blockSize);
             double loudness = -0.691 + 10.0 * Math.Log10(Math.Max(rms * rms, 1e-10));
             blockLoudness.Add(loudness);
-            totalBlocks++;
         }
 
-        if (totalBlocks == 0)
+        if (blockLoudness.Count == 0)
             return new LufsResult(-100, 0);
 
-        // Relative gate: exclude blocks below absolute gate -10
+        // Absolute gate
         double absoluteSum = 0;
         int absoluteCount = 0;
-        for (int i = 0; i < blockLoudness.Count; i++)
+        foreach (var b in blockLoudness)
         {
-            if (blockLoudness[i] > AbsoluteGate)
+            if (b > AbsoluteGate)
             {
-                absoluteSum += Math.Pow(10, (blockLoudness[i]) / 10);
+                absoluteSum += Math.Pow(10, b / 10);
                 absoluteCount++;
             }
         }
@@ -60,11 +70,11 @@ public class LufsMeter
         double relativeThreshold = absoluteLoudness + RelativeGate;
         double gatedSum = 0;
         int gatedCount = 0;
-        for (int i = 0; i < blockLoudness.Count; i++)
+        foreach (var b in blockLoudness)
         {
-            if (blockLoudness[i] > relativeThreshold)
+            if (b > relativeThreshold)
             {
-                gatedSum += Math.Pow(10, blockLoudness[i] / 10);
+                gatedSum += Math.Pow(10, b / 10);
                 gatedCount++;
             }
         }
@@ -73,12 +83,8 @@ public class LufsMeter
             ? -0.691 + 10.0 * Math.Log10(gatedSum / gatedCount)
             : -70.0;
 
-        // LRA (Loudness Range)
-        var loudBlocks = blockLoudness
-            .Where(b => b > AbsoluteGate)
-            .OrderBy(b => b)
-            .ToList();
-
+        // LRA
+        var loudBlocks = blockLoudness.Where(b => b > AbsoluteGate).OrderBy(b => b).ToList();
         double lra = 0;
         if (loudBlocks.Count >= 10)
         {
@@ -87,35 +93,23 @@ public class LufsMeter
             lra = loudBlocks[highIdx] - loudBlocks[lowIdx];
         }
 
-        return new LufsResult(
-            Math.Round(integratedLufs, 1),
-            Math.Round(lra, 1));
+        return new LufsResult(Math.Round(integratedLufs, 1), Math.Round(lra, 1));
     }
 
-    // Simplified stable K-weighting: first-order high-pass + mild high-shelf.
-    private double _hpX1, _hpY1;
-    private double _shX1, _shY1;
-
-    private void ResetFilters()
+    private static float[] ToMono(StereoBuffer buffer)
     {
-        _hpX1 = _hpY1 = 0;
-        _shX1 = _shY1 = 0;
-    }
-
-    private double KWeightFilter(double sample)
-    {
-        // First-order high-pass at ~100 Hz
-        // H(z) = 0.99 * (1 - z^-1) / (1 - 0.99*z^-1)
-        double hpOut = 0.99 * _hpY1 + 0.99 * (sample - _hpX1);
-        _hpX1 = sample;
-        _hpY1 = hpOut;
-
-        // Mild high-shelf: output = input + 0.25 * (input filtered to preserve highs)
-        // Simple approach: y[n] = hpOut + 0.2 * (hpOut - _shX1)
-        double shOut = hpOut + 0.2 * (hpOut - _shX1);
-        _shX1 = hpOut;
-
-        return shOut;
+        int n = buffer.Length;
+        var mono = new float[n];
+        if (buffer.IsStereo)
+        {
+            for (int i = 0; i < n; i++)
+                mono[i] = (buffer.Left[i] + buffer.Right[i]) * 0.5f;
+        }
+        else
+        {
+            Array.Copy(buffer.Left, mono, n);
+        }
+        return mono;
     }
 }
 
