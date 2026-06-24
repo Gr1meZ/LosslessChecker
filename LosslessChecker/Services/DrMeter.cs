@@ -82,6 +82,29 @@ public class DrMeter
 
         double dr = ComputeDr(rmsDb, peakDb);
         double peak = globalPeak > 0 ? 20.0 * Math.Log10(globalPeak) : 0;
+
+        // Debug: log per-block values for top 20% blocks
+        try
+        {
+            var indexed = rmsDb.Select((r, i) => (r, p: peakDb[i])).OrderByDescending(x => x.r).ToList();
+            int topN = Math.Max(1, (int)(indexed.Count * TopPct));
+            double avgP = indexed.Take(topN).Average(x => x.p);
+            double avgR = indexed.Take(topN).Average(x => x.r);
+            int trimN = (int)(topN * TrimPct);
+            var work = indexed.Skip(trimN).Take(topN - trimN).ToList();
+            double avgPW = work.Count > 0 ? work.Average(x => x.p) : avgP;
+            double avgRW = work.Count > 0 ? work.Average(x => x.r) : avgR;
+
+            var logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lossless_dr_debug.log");
+            System.IO.File.AppendAllText(logPath,
+                $"{DateTime.Now:HH:mm:ss.fff} DRchan: blocks={indexed.Count} top20P={avgP:F2} top20R={avgR:F2} dr20={avgP-avgR:F2} trimmed: workP={avgPW:F2} workR={avgRW:F2} dr={avgPW-avgRW:F2}{Environment.NewLine}");
+            // Log top 5 blocks
+            for (int i = 0; i < Math.Min(5, topN); i++)
+                System.IO.File.AppendAllText(logPath,
+                    $"  block[{i}] peak={indexed[i].p:F2} rms={indexed[i].r:F2}{Environment.NewLine}");
+        }
+        catch { }
+
         return (dr, peak, 0);
     }
 
