@@ -8,68 +8,92 @@ public class VerdictGenerator
     public string Generate(AnalysisResult r)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(r.FileName);
+
+        // Section 1
+        string authRu = r.Authenticity switch
+        {
+            "TRUE LOSSLESS" => "НАСТОЯЩИЙ LOSSLESS",
+            "SUSPICIOUS" => "ПОДОЗРИТЕЛЬНЫЙ",
+            "FAKE LOSSLESS" => "ФЕЙК (ПЕРЕЖАТ ИЗ LOSSY)",
+            "FAKE HI-RES" => "ФЕЙК HI-RES (АПСКЕЙЛ ИЗ CD)",
+            _ => r.Authenticity
+        };
+        sb.Append("1. СТАТУС LOSSLESS: ").Append(authRu);
+        sb.Append(" | срез на ").Append($"{r.CutoffFrequency:F0} Гц");
+        if (r.ShelfType.Length > 0)
+        {
+            string shelf = r.ShelfType switch
+            {
+                "Brickwall" => "кирпичная стена",
+                "Filtered" => "фильтрованный спад",
+                "Natural" => "естественный спад",
+                _ => r.ShelfType.ToLower()
+            };
+            sb.Append(", ").Append(shelf);
+        }
+        if (r.EncoderMatch != "None" && r.EncoderMatch.Length > 0)
+            sb.Append(", совпадает с ").Append(r.EncoderMatch);
         sb.AppendLine();
 
-        sb.Append("1. LOSSLESS STATUS: ");
-        sb.Append(r.Authenticity);
-        sb.Append(" | ");
-        sb.Append($"cutoff at {r.CutoffFrequency:F0} Hz");
-        if (r.ShelfType.Length > 0) sb.Append($", {r.ShelfType.ToLower()} rolloff");
-        if (r.EncoderMatch != "None") sb.Append($", matches {r.EncoderMatch}");
-        sb.AppendLine();
-        sb.AppendLine();
-
-        sb.Append("2. CLIPPING & PEAK: ");
+        // Section 2
+        sb.Append("2. ПИКИ И КЛИППИНГ: ");
         if (r.HasIsp || r.ClippingPercent > 0)
-            sb.Append("CLIPPED | ");
+            sb.Append("КЛИППИНГ | ");
         else if (r.TruePeakDb > -0.5)
-            sb.Append("HOT | ");
+            sb.Append("ГОРЯЧИЙ СИГНАЛ | ");
         else
-            sb.Append("CLEAN | ");
+            sb.Append("ЧИСТО | ");
         sb.Append($"Sample Peak {r.SamplePeakDb:F1} dBFS, True Peak {r.TruePeakDb:F1} dBTP");
-        if (r.HasIsp) sb.Append(", ISP DISTORTION");
-        sb.AppendLine();
+        if (r.HasIsp) sb.Append(", МЕЖСЭМПЛОВЫЕ ИСКАЖЕНИЯ");
         sb.AppendLine();
 
-        sb.Append("3. DYNAMICS: ");
-        if (r.DynamicRange >= 13) sb.Append("AUDIOPHILE");
-        else if (r.DynamicRange >= 9) sb.Append("GOOD");
-        else if (r.DynamicRange >= 6) sb.Append("COMPRESSED");
-        else sb.Append("CATASTROPHIC");
+        // Section 3
+        sb.Append("3. ДИНАМИКА: ");
+        if (r.DynamicRange >= 13) sb.Append("АУДИОФИЛ");
+        else if (r.DynamicRange >= 9) sb.Append("ХОРОШО");
+        else if (r.DynamicRange >= 6) sb.Append("СЖАТО");
+        else sb.Append("ПЕРЕЖАТО");
         sb.Append($" | DR{r.DynamicRange:F0}");
         if (r.IntegratedLufs < -1)
-            sb.Append($", Integrated {r.IntegratedLufs:F1} LUFS");
+            sb.Append($", LUFS {r.IntegratedLufs:F1}");
         if (r.Plr > 0)
-            sb.Append($", PLR {r.Plr:F1} dB");
-        sb.AppendLine();
+            sb.Append($", PLR {r.Plr:F1} дБ");
         sb.AppendLine();
 
-        sb.Append("4. TECHNICAL RED FLAGS: ");
+        // Section 4
+        sb.Append("4. ТЕХНИЧЕСКИЕ ПРОБЛЕМЫ: ");
         var flags = new List<string>();
         if (Math.Abs(r.DcOffsetL) > 0.001 || Math.Abs(r.DcOffsetR) > 0.001)
-            flags.Add($"DC Offset: L={r.DcOffsetL:F4}%, R={r.DcOffsetR:F4}%");
+            flags.Add($"DC смещение: L={r.DcOffsetL:F4}%, R={r.DcOffsetR:F4}%");
         if (r.Correlation < 0)
-            flags.Add($"Phase correlation: {r.Correlation:F2} (mono incompatible)");
+            flags.Add($"Корреляция фазы: {r.Correlation:F2} (несовместимо с моно)");
         if (r.LsbZeroPadded)
-            flags.Add($"24-bit file has zero-padded LSBs (effective {r.EffectiveBitDepth}-bit)");
+            flags.Add($"24-бит с нулевыми младшими битами (эфф. {r.EffectiveBitDepth}-бит)");
         if (r.BitDepthSuspicious)
-            flags.Add($"Bit depth suspicious");
+            flags.Add($"Битовая глубина подозрительна");
         if (r.IsUpscale)
-            flags.Add($"Hi-Res upscale suspected (max HF {r.MaxHfDb:F0} dB)");
-        sb.AppendLine(flags.Count > 0 ? "   - " + string.Join("\n   - ", flags) : "None");
-        sb.AppendLine();
+            flags.Add($"Hi-Res апскейл (макс ВЧ {r.MaxHfDb:F0} дБ)");
+        sb.AppendLine(flags.Count > 0 ? "   - " + string.Join("\n   - ", flags) : "Нет");
 
-        sb.Append("5. OVERALL VERDICT: ");
+        // Section 5
+        sb.Append("5. ИТОГОВЫЙ ВЕРДИКТ: ");
         sb.Append($"{r.QualityScore}/10");
         sb.Append(" | ");
-        sb.Append(r.Decision);
+        string decRu = r.Decision switch
+        {
+            "KEEP" => "ОСТАВИТЬ",
+            "KEEP (poor master)" => "ОСТАВИТЬ (плохой мастеринг)",
+            "INVESTIGATE" => "ПРОВЕРИТЬ",
+            "REPLACE" => "ЗАМЕНИТЬ",
+            _ => r.Decision
+        };
+        sb.Append(decRu);
         if (r.QualityScore >= 7 && r.Authenticity == "TRUE LOSSLESS")
-            sb.Append(" — Excellent, genuine lossless");
+            sb.Append(" — Отличный мастеринг, подлинный lossless");
         else if (r.Authenticity == "TRUE LOSSLESS" && r.QualityScore < 4)
-            sb.Append(" — Genuine but poorly mastered");
+            sb.Append(" — Подлинный, но плохо смастеренный");
         else if (r.Authenticity.StartsWith("FAKE"))
-            sb.Append(" — Not genuine, find original source");
+            sb.Append(" — Не подлинный, ищите оригинал");
 
         return sb.ToString();
     }
