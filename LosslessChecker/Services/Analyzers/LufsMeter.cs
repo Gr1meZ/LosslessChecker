@@ -92,39 +92,30 @@ public class LufsMeter
             Math.Round(lra, 1));
     }
 
-    private double _x1p, _x2p, _y1p, _y2p;
-    private double _x1s, _x2s, _y1s, _y2s;
+    // Simplified stable K-weighting: first-order high-pass + mild high-shelf.
+    private double _hpX1, _hpY1;
+    private double _shX1, _shY1;
 
     private void ResetFilters()
     {
-        _x1p = _x2p = _y1p = _y2p = 0;
-        _x1s = _x2s = _y1s = _y2s = 0;
+        _hpX1 = _hpY1 = 0;
+        _shX1 = _shY1 = 0;
     }
 
     private double KWeightFilter(double sample)
     {
-        // Pre-filter (high-pass, second-order) — ITU-R BS.1770-4 Table 1 coefficients for 48kHz
-        const double a1_p = -1.69065929318241;
-        const double a2_p = 0.73248077421585;
-        const double b0_p = 1.53512485958697;
-        const double b1_p = -2.69169618940638;
-        const double b2_p = 1.19839281085285;
+        // First-order high-pass at ~100 Hz
+        // H(z) = 0.99 * (1 - z^-1) / (1 - 0.99*z^-1)
+        double hpOut = 0.99 * _hpY1 + 0.99 * (sample - _hpX1);
+        _hpX1 = sample;
+        _hpY1 = hpOut;
 
-        double preOut = b0_p * sample + b1_p * _x1p + b2_p * _x2p
-                      - a1_p * _y1p - a2_p * _y2p;
-        _x2p = _x1p; _x1p = sample;
-        _y2p = _y1p; _y1p = preOut;
+        // Mild high-shelf: output = input + 0.25 * (input filtered to preserve highs)
+        // Simple approach: y[n] = hpOut + 0.2 * (hpOut - _shX1)
+        double shOut = hpOut + 0.2 * (hpOut - _shX1);
+        _shX1 = hpOut;
 
-        // High-shelf (+4 dB, second-order) — ITU-R BS.1770-4 Table 2 coefficients for 48kHz
-        const double a1_s = -1.99004745483398;
-        const double a2_s = 0.99007225036621;
-
-        double shelfOut = preOut + _x1s * (-2.0) + _x2s
-                        - a1_s * _y1s - a2_s * _y2s;
-        _x2s = _x1s; _x1s = preOut;
-        _y2s = _y1s; _y1s = shelfOut;
-
-        return shelfOut;
+        return shOut;
     }
 }
 
