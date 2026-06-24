@@ -57,6 +57,7 @@ public partial class AudioFileViewModel : ObservableObject
     private byte[]? _rawSpectro;
     private int _spectroWidth, _spectroHeight;
     private AnalysisResult? _lastResult;
+    internal AnalysisResult? LastResult => _lastResult;
 
     public AudioFileViewModel(AudioFileInfo fileInfo)
     {

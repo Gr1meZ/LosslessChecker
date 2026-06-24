@@ -55,9 +55,7 @@ public partial class MainWindow : Window
         if (_viewModel.SelectedFile == null) return;
 
         var vm = _viewModel.SelectedFile;
-        var fi = typeof(AudioFileViewModel).GetField("_lastResult",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var lastResult = fi?.GetValue(vm) as Models.AnalysisResult;
+        var lastResult = vm.LastResult;
 
         if (lastResult?.SpectrogramFlat is { Length: > 0 })
         {
