@@ -30,9 +30,6 @@ public class AudioDecoder
                 for (int i = 0; i < read; i++) left.Add(buffer[i]);
             }
 
-            // Debug: log overall level
-            LogLevel("mono", left, format.SampleRate);
-
             return new StereoBuffer(left.ToArray(), Array.Empty<float>(), format.SampleRate);
         }
 
