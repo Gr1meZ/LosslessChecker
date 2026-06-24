@@ -48,6 +48,26 @@ public partial class AudioFileViewModel : ObservableObject
     [ObservableProperty] private double _durationSeconds;
     [ObservableProperty] private byte[]? _coverData;
     [ObservableProperty] private WriteableBitmap? _spectrogramBitmap;
+    [ObservableProperty] private int _mp3Bitrate;
+
+    public string VerdictLabel => Decision switch
+    {
+        "KEEP" => SampleRate >= 88200 && HiResScorePercent >= 70 ? "HI-RES" : "LOSSLESS",
+        "KEEP (poor master)" => "LOSSLESS",
+        "INVESTIGATE" => "NOT SURE",
+        "REPLACE" => Format.StartsWith("MP3", StringComparison.OrdinalIgnoreCase) && Mp3Bitrate > 0
+            ? $"MP3 {Mp3Bitrate}" : "REPLACE",
+        _ => Decision
+    };
+
+    public string VerdictDisplayText => VerdictLabel switch
+    {
+        "LOSSLESS" => "✅ LOSSLESS",
+        "HI-RES" => "✅ HI-RES",
+        "NOT SURE" => "⚠ NOT SURE",
+        "REPLACE" => "❌ REPLACE",
+        _ => VerdictLabel.StartsWith("MP3") ? $"❌ {VerdictLabel}" : VerdictLabel
+    };
 
     // Detail panel: metric items collection
     [ObservableProperty] private ObservableCollection<MetricItem> _metricItems = new();
@@ -103,6 +123,7 @@ public partial class AudioFileViewModel : ObservableObject
         DurationSeconds = r.DurationSeconds;
         CoverData = r.CoverData;
         EncoderMatch = r.EncoderMatch;
+        Mp3Bitrate = r.Mp3Bitrate;
 
         if (r.SpectrogramFlat is { Length: > 0 })
         {
@@ -112,6 +133,15 @@ public partial class AudioFileViewModel : ObservableObject
         }
 
         BuildMetricItems(r);
+
+        OnPropertyChanged(nameof(VerdictLabel));
+        OnPropertyChanged(nameof(VerdictDisplayText));
+    }
+
+    partial void OnDecisionChanged(string value)
+    {
+        OnPropertyChanged(nameof(VerdictLabel));
+        OnPropertyChanged(nameof(VerdictDisplayText));
     }
 
     private void BuildMetricItems(AnalysisResult r)
@@ -516,6 +546,20 @@ public partial class AudioFileViewModel : ObservableObject
             Description = "Рекомендация: ОСТАВИТЬ — файл подлинный, качество приемлемо. ПРОВЕРИТЬ — подозрительный. ЗАМЕНИТЬ — фейк. Настоящий lossless НИКОГДА не получит 'ЗАМЕНИТЬ'.",
             Typical = "ОСТАВИТЬ / ПРОВЕРИТЬ / ЗАМЕНИТЬ"
         });
+
+        if (!string.IsNullOrEmpty(r.WhyVerdict))
+        {
+            items.Add(new MetricItem { Name = "Обоснование", IsHeader = true });
+            items.Add(new MetricItem
+            {
+                Category = "Итог",
+                Name = "Почему?",
+                Value = r.WhyVerdict,
+                Status = "—",
+                StatusColor = "#585b70",
+                Description = r.WhyVerdict
+            });
+        }
 
         MetricItems = items;
     }

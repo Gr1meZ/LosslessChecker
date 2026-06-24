@@ -208,6 +208,7 @@ public class AudioPipeline
                 MetricsCoverage = ComputeMetricsCoverage(result),
                 Decision = decision,
                 StructuredReport = _verdict.Generate(result),
+                WhyVerdict = _verdict.GenerateWhy(result),
                 AnalysisStatus = AnalysisStatus.Completed,
                 Mp3QualityScore = mp3QualityScore
             };

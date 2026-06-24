@@ -251,13 +251,13 @@
                              Background="{DynamicResource BgSecondaryBrush}" Foreground="{DynamicResource FgPrimaryBrush}"
                              BorderBrush="{DynamicResource BorderBrush}" FontSize="11"
                              ToolTip="Поиск по названию, артисту, альбому"/>
-                    <ToggleButton Content="KEEP" IsChecked="{Binding ShowKeep}" Width="50"
+                    <ToggleButton Content="LOSSLESS" IsChecked="{Binding ShowKeep}" Width="70"
                                    Background="#1a3022" Foreground="{DynamicResource LosslessGreenBrush}" Margin="2,0" FontSize="10"/>
-                    <ToggleButton Content="INV" IsChecked="{Binding ShowInvestigate}" Width="40"
+                    <ToggleButton Content="NOT SURE" IsChecked="{Binding ShowInvestigate}" Width="70"
                                    Background="#2e2a1a" Foreground="{DynamicResource SuspiciousAmberBrush}" Margin="2,0" FontSize="10"/>
-                    <ToggleButton Content="REPL" IsChecked="{Binding ShowReplace}" Width="45"
+                    <ToggleButton Content="REPLACE" IsChecked="{Binding ShowReplace}" Width="65"
                                    Background="#301a1a" Foreground="{DynamicResource FakeRedBrush}" Margin="2,0" FontSize="10"/>
-                    <ToggleButton Content="MP3" IsChecked="{Binding ShowMp3}" Width="40"
+                    <ToggleButton Content="MP3" IsChecked="{Binding ShowMp3}" Width="45"
                                    Background="{DynamicResource BgSecondaryBrush}" Foreground="#f9e2af" Margin="2,0" FontSize="10"/>
                 </StackPanel>
 
@@ -336,11 +336,11 @@
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="Решение" Binding="{Binding Decision}" Width="90"
-                                       SortMemberPath="Decision">
+                    <DataGridTextColumn Header="Решение" Binding="{Binding VerdictLabel}" Width="90"
+                                        SortMemberPath="VerdictLabel">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{Binding Decision, Converter={StaticResource DecToColor}}"/>
+                                <Setter Property="Foreground" Value="{Binding VerdictLabel, Converter={StaticResource DecToColor}}"/>
                                 <Setter Property="FontWeight" Value="Bold"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
@@ -447,49 +447,12 @@
                     </Border>
 
                     <!-- Verdict bar -->
-                    <Border CornerRadius="4" Padding="10,8" Margin="0,0,0,8">
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP">
-                                        <Setter Property="Background" Value="#1a3022"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP (poor master)">
-                                        <Setter Property="Background" Value="#2e2a1a"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="INVESTIGATE">
-                                        <Setter Property="Background" Value="#2e2a1a"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="REPLACE">
-                                        <Setter Property="Background" Value="#301a1a"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
+                    <Border CornerRadius="4" Padding="10,8" Margin="0,0,0,8"
+                            Background="{Binding SelectedFile.VerdictLabel, Converter={StaticResource DecToColor}}">
                         <StackPanel>
-                            <TextBlock FontSize="16" FontWeight="Bold" Margin="0,0,0,4">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP">
-                                                <Setter Property="Text" Value="✅ ОСТАВИТЬ"/>
-                                                <Setter Property="Foreground" Value="{DynamicResource LosslessGreenBrush}"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP (poor master)">
-                                                <Setter Property="Text" Value="⚠ ОСТАВИТЬ (плохой мастеринг)"/>
-                                                <Setter Property="Foreground" Value="{DynamicResource SuspiciousAmberBrush}"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="INVESTIGATE">
-                                                <Setter Property="Text" Value="🔍 ПРОВЕРИТЬ"/>
-                                                <Setter Property="Foreground" Value="{DynamicResource SuspiciousAmberBrush}"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="REPLACE">
-                                                <Setter Property="Text" Value="❌ ЗАМЕНИТЬ"/>
-                                                <Setter Property="Foreground" Value="{DynamicResource FakeRedBrush}"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
+                            <TextBlock FontSize="16" FontWeight="Bold" Margin="0,0,0,4"
+                                       Foreground="{Binding SelectedFile.VerdictLabel, Converter={StaticResource DecToColor}}">
+                                <Run Text="{Binding SelectedFile.VerdictDisplayText, Mode=OneWay}"/>
                             </TextBlock>
                             <TextBlock FontSize="11" Foreground="{DynamicResource FgMutedBrush}">
                                 <Run Text="Подлинность: "/>

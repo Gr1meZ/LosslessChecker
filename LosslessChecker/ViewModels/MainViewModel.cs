@@ -151,10 +151,10 @@ public partial class MainViewModel : ObservableObject
                 (f.Album?.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ?? false));
 
         filtered = filtered.Where(f =>
-            (f.Decision.StartsWith("KEEP") && ShowKeep) ||
-            (f.Decision == "INVESTIGATE" && ShowInvestigate) ||
-            (f.Decision == "REPLACE" && ShowReplace) ||
-            (f.Format.StartsWith("MP3") && ShowMp3));
+            ((f.VerdictLabel == "LOSSLESS" || f.VerdictLabel == "HI-RES") && ShowKeep) ||
+            (f.VerdictLabel == "NOT SURE" && ShowInvestigate) ||
+            (f.VerdictLabel == "REPLACE" && ShowReplace) ||
+            (f.VerdictLabel.StartsWith("MP3") && ShowMp3));
 
         var sorted = SortAscending
             ? filtered.OrderBy(f => GetPropertyValue(f, SortColumn))
@@ -182,7 +182,7 @@ public partial class MainViewModel : ObservableObject
         "DynamicRange" => f.DynamicRange,
         "Authenticity" => f.Authenticity,
         "QualityScorePercent" => f.QualityScorePercent,
-        "Decision" => f.Decision,
+        "Decision" => f.VerdictLabel,
         _ => f.FileName
     };
 

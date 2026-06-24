@@ -97,4 +97,31 @@ public class VerdictGenerator
 
         return sb.ToString();
     }
+
+    public string GenerateWhy(AnalysisResult r)
+    {
+        var sb = new StringBuilder();
+        var nyquist = r.SampleRate / 2.0;
+        double ratio = nyquist > 0 ? r.CutoffFrequency / nyquist : 1.0;
+
+        sb.Append("Срез ").Append($"{r.CutoffFrequency:F0} Гц ({ratio * 100:F0}% Найквиста)");
+        if (r.ShelfType == "Brickwall") sb.Append(" — кирпичная стена, признак lossy-кодека");
+        else if (r.ShelfType == "Filtered") sb.Append(" — фильтрованный спад");
+        else sb.Append(" — естественный спад");
+
+        sb.Append(". DR").Append($"{r.DynamicRange:F0}");
+        if (r.DynamicRange >= 10) sb.Append(" — аудиофильская динамика");
+        else if (r.DynamicRange >= 6) sb.Append(" — хорошая динамика");
+        else if (r.DynamicRange >= 3) sb.Append(" — сжато");
+        else sb.Append(" — пережато");
+
+        if (r.HasArtifacts) sb.Append(". Артефакты: ").Append(r.ArtifactLevel);
+        else sb.Append(". Артефакты не обнаружены");
+
+        if (r.Authenticity == "TRUE LOSSLESS") sb.Append(". Подлинный lossless.");
+        else if (r.Authenticity == "SUSPICIOUS") sb.Append(". Подозрительный — проверьте источник.");
+        else sb.Append(". Фейк — пережат из lossy.");
+
+        return sb.ToString();
+    }
 }
