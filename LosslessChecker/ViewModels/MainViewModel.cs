@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.Linq;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -29,6 +31,32 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isProcessing;
+
+    [ObservableProperty]
+    private bool _isEmpty = true;
+
+    [ObservableProperty]
+    private string _searchQuery = "";
+
+    [ObservableProperty]
+    private bool _showKeep = true;
+
+    [ObservableProperty]
+    private bool _showInvestigate = true;
+
+    [ObservableProperty]
+    private bool _showReplace = true;
+
+    [ObservableProperty]
+    private bool _showMp3 = true;
+
+    [ObservableProperty]
+    private string _sortColumn = "FileName";
+
+    [ObservableProperty]
+    private bool _sortAscending = true;
+
+    private IEnumerable<AudioFileViewModel> _baseFiles = Enumerable.Empty<AudioFileViewModel>();
 
     [ObservableProperty]
     private int _totalFiles;
@@ -93,38 +121,95 @@ public partial class MainViewModel : ObservableObject
         {
             case ArtistGroup artist:
                 SelectedGroup = null;
-                FilteredFiles = new ObservableCollection<AudioFileViewModel>(
-                    artist.Albums.SelectMany(a => a.Tracks));
+                _baseFiles = artist.Albums.SelectMany(a => a.Tracks);
                 break;
             case AlbumGroup album:
                 SelectedGroup = album;
-                FilteredFiles = album.Tracks;
+                _baseFiles = album.Tracks;
                 break;
             case AudioFileViewModel track:
                 SelectedGroup = null;
-                FilteredFiles = new ObservableCollection<AudioFileViewModel> { track };
+                _baseFiles = new[] { track };
                 SelectedFile = track;
                 break;
             default:
                 SelectedGroup = null;
-                FilteredFiles = Files;
+                _baseFiles = Files;
                 break;
         }
+        ApplyFilters();
     }
 
-    [RelayCommand]
-    private async Task SelectFolder()
+    public void ApplyFilters()
     {
-        var dialog = new System.Windows.Forms.FolderBrowserDialog
-        {
-            Description = "Select folder with audio files",
-            UseDescriptionForTitle = true
-        };
+        var filtered = _baseFiles.AsEnumerable();
 
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        if (!string.IsNullOrWhiteSpace(SearchQuery))
+            filtered = filtered.Where(f =>
+                f.FileName.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                (f.Artist?.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (f.Album?.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ?? false));
+
+        filtered = filtered.Where(f =>
+            (f.Decision.StartsWith("KEEP") && ShowKeep) ||
+            (f.Decision == "INVESTIGATE" && ShowInvestigate) ||
+            (f.Decision == "REPLACE" && ShowReplace) ||
+            (f.Format.StartsWith("MP3") && ShowMp3));
+
+        var sorted = SortAscending
+            ? filtered.OrderBy(f => GetPropertyValue(f, SortColumn))
+            : filtered.OrderByDescending(f => GetPropertyValue(f, SortColumn));
+
+        FilteredFiles = new ObservableCollection<AudioFileViewModel>(sorted);
+    }
+
+    public void SortFiles(string columnName)
+    {
+        if (SortColumn == columnName)
+            SortAscending = !SortAscending;
+        else
+            (SortColumn, SortAscending) = (columnName, true);
+
+        ApplyFilters();
+    }
+
+    private static object GetPropertyValue(AudioFileViewModel f, string column) => column switch
+    {
+        "FileName" => f.FileName,
+        "DurationSeconds" => f.DurationSeconds,
+        "Format" => f.Format,
+        "CutoffFrequency" => f.CutoffFrequency,
+        "DynamicRange" => f.DynamicRange,
+        "Authenticity" => f.Authenticity,
+        "QualityScorePercent" => f.QualityScorePercent,
+        "Decision" => f.Decision,
+        _ => f.FileName
+    };
+
+    partial void OnSearchQueryChanged(string value) => ApplyFilters();
+    partial void OnShowKeepChanged(bool value) => ApplyFilters();
+    partial void OnShowInvestigateChanged(bool value) => ApplyFilters();
+    partial void OnShowReplaceChanged(bool value) => ApplyFilters();
+    partial void OnShowMp3Changed(bool value) => ApplyFilters();
+
+    [RelayCommand]
+    private async Task SelectFolder(string? folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(folderPath))
         {
-            await ScanAndAnalyze(dialog.SelectedPath);
+            var dialog = new System.Windows.Forms.FolderBrowserDialog
+            {
+                Description = "Select folder with audio files",
+                UseDescriptionForTitle = true
+            };
+
+            if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                return;
+
+            folderPath = dialog.SelectedPath;
         }
+
+        await ScanAndAnalyze(folderPath);
     }
 
     [RelayCommand]
@@ -133,9 +218,68 @@ public partial class MainViewModel : ObservableObject
         _cts?.Cancel();
     }
 
+    [RelayCommand]
+    private void Export()
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "CSV File|*.csv|JSON File|*.json|HTML Report|*.html",
+            Title = "Export results",
+            FileName = "lossless_checker_report"
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        var data = Files.Where(f => f.AnalysisStatus == Models.AnalysisStatus.Completed).ToList();
+        if (data.Count == 0) return;
+
+        var ext = System.IO.Path.GetExtension(dialog.FileName).ToLowerInvariant();
+        if (ext == ".csv") ExportCsv(dialog.FileName, data);
+        else if (ext == ".json") ExportJson(dialog.FileName, data);
+        else if (ext == ".html") ExportHtml(dialog.FileName, data);
+    }
+
+    private static void ExportCsv(string path, List<AudioFileViewModel> data)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("File,Artist,Album,Format,SampleRate,BitDepth,Duration,Cutoff,DR,TruePeak,Clipping,Authenticity,LosslessScore,HiResScore,Quality,Decision");
+        foreach (var f in data)
+            sb.AppendLine($"\"{f.FileName}\",\"{f.Artist}\",\"{f.Album}\",{f.Format},{f.SampleRate},{f.BitDepth},{f.DurationSeconds:F1},{f.CutoffFrequency:F0},{f.DynamicRange:F0},{f.TruePeakDb:F1},{f.ClippingPercent:F2},{f.Authenticity},{f.LosslessScorePercent:F0}%,{f.HiResScorePercent:F0}%,{f.QualityScorePercent:F0}%,{f.Decision}");
+        System.IO.File.WriteAllText(path, sb.ToString());
+    }
+
+    private static void ExportJson(string path, List<AudioFileViewModel> data)
+    {
+        var json = JsonSerializer.Serialize(data.Select(f => new
+        {
+            f.FileName, f.Artist, f.Album, f.Format, f.SampleRate, f.BitDepth,
+            f.DurationSeconds, f.CutoffFrequency, f.DynamicRange, f.TruePeakDb,
+            f.ClippingPercent, f.Authenticity, LosslessScore = f.LosslessScorePercent,
+            HiResScore = f.HiResScorePercent, QualityScore = f.QualityScorePercent, f.Decision
+        }), new JsonSerializerOptions { WriteIndented = true });
+        System.IO.File.WriteAllText(path, json);
+    }
+
+    private static void ExportHtml(string path, List<AudioFileViewModel> data)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("<!DOCTYPE html><html><head><meta charset='utf-8'><title>LosslessChecker Report</title>");
+        sb.AppendLine("<style>body{font-family:Segoe UI,sans-serif;background:#1e1e2e;color:#cdd6f4;margin:20px}");
+        sb.AppendLine("table{border-collapse:collapse;width:100%}th{background:#313244;padding:8px;text-align:left}");
+        sb.AppendLine("td{padding:6px 8px;border-bottom:1px solid #45475a}.good{color:#2EA043}.warn{color:#D29922}.bad{color:#CF222E}</style></head><body>");
+        sb.AppendLine("<h1>LosslessChecker Report</h1><table><tr><th>File</th><th>Artist</th><th>Format</th><th>Cutoff</th><th>DR</th><th>Auth</th><th>Lossless</th><th>Quality</th><th>Decision</th></tr>");
+        foreach (var f in data)
+        {
+            string cls = f.Decision switch { var d when d.StartsWith("KEEP") => "good", "INVESTIGATE" => "warn", _ => "bad" };
+            sb.AppendLine($"<tr class='{cls}'><td>{System.Net.WebUtility.HtmlEncode(f.FileName)}</td><td>{System.Net.WebUtility.HtmlEncode(f.Artist)}</td><td>{f.Format}</td><td>{f.CutoffFrequency:F0} Hz</td><td>DR{f.DynamicRange:F0}</td><td>{f.Authenticity}</td><td>{f.LosslessScorePercent:F0}%</td><td>{f.QualityScorePercent:F0}%</td><td><b>{f.Decision}</b></td></tr>");
+        }
+        sb.AppendLine("</table></body></html>");
+        System.IO.File.WriteAllText(path, sb.ToString());
+    }
+
     private async Task ScanAndAnalyze(string folderPath)
     {
         IsProcessing = true;
+        IsEmpty = true;
         ProcessedFiles = 0;
         ErrorCount = 0;
         KeepCount = 0;
@@ -202,13 +346,16 @@ public partial class MainViewModel : ObservableObject
             await Task.WhenAll(tasks);
 
             PopulateArtistGroups();
-            FilteredFiles = new ObservableCollection<AudioFileViewModel>(Files);
+            _baseFiles = Files;
+            ApplyFilters();
+            IsEmpty = Files.Count == 0;
         }
         catch (OperationCanceledException) { }
         finally
         {
             IsProcessing = false;
             UpdateSummary();
+            IsEmpty = Files.Count == 0;
         }
     }
 
