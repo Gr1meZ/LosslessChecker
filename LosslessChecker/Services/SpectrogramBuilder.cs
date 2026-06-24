@@ -49,6 +49,10 @@ public class SpectrogramBuilder
         int framesBuilt = 0;
         var flat = new byte[maxWidth * height];
         double refMag = Math.Max(globalPeak, 1e-10);
+        double nyquist = sampleRate / 2.0;
+        double logMin = Math.Log10(20.0);
+        double logMax = Math.Log10(nyquist);
+        double logRange = logMax - logMin;
 
         for (int pos = 0; pos + FftSize <= samples.Length; pos += HopSize)
         {
@@ -60,11 +64,12 @@ public class SpectrogramBuilder
             counter++;
             if (counter % step == 0 && framesBuilt < maxWidth)
             {
-                double ratio = (double)(FftSize / 2) / height;
                 int offset = framesBuilt * height;
+                double binsPerHz = (double)(FftSize / 2) / nyquist;
                 for (int j = 0; j < height; j++)
                 {
-                    int srcIdx = Math.Min((int)(j * ratio), FftSize / 2 - 1);
+                    double freq = Math.Pow(10, logMin + logRange * j / (height - 1));
+                    int srcIdx = Math.Min((int)(freq * binsPerHz), FftSize / 2 - 1);
                     double mag = MathF.Sqrt(_real[srcIdx] * _real[srcIdx] + _imag[srcIdx] * _imag[srcIdx]);
                     double db = 20.0 * Math.Log10(Math.Max(mag, 1e-10) / refMag);
                     flat[offset + j] = (byte)Math.Max(0, Math.Min(255, (int)((db + 96.0) / 96.0 * 255)));
