@@ -75,6 +75,11 @@
             <Setter Property="Padding" Value="5,3"/>
             <Setter Property="Foreground" Value="{DynamicResource FgPrimaryBrush}"/>
             <Setter Property="FontSize" Value="12"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Foreground" Value="#1e1e2e"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <!-- TreeView item style -->

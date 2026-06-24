@@ -80,20 +80,10 @@ public partial class MainWindow : Window
 
     private async void Window_Drop(object sender, System.Windows.DragEventArgs e)
     {
-        string? path = null;
         if (e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop))
         {
             var files = (string[])e.Data.GetData(System.Windows.DataFormats.FileDrop);
-            if (files.Length > 0)
-            {
-                path = System.IO.File.Exists(files[0])
-                    ? System.IO.Path.GetDirectoryName(files[0])
-                    : files[0];
-            }
-        }
-        if (path != null)
-        {
-            await _viewModel.SelectFolderCommand.ExecuteAsync(path);
+            await _viewModel.ScanAndAppend(files);
         }
     }
 
