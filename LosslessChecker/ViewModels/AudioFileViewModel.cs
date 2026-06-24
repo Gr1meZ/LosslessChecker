@@ -31,6 +31,7 @@ public partial class AudioFileViewModel : ObservableObject
     [ObservableProperty] private double _dcOffsetL;
     [ObservableProperty] private double _dcOffsetR;
     [ObservableProperty] private double _integratedLufs;
+    [ObservableProperty] private double _overallRmsDb;
     [ObservableProperty] private int _sampleRate;
     [ObservableProperty] private int _bitDepth;
     [ObservableProperty] private int _channels;
@@ -75,6 +76,7 @@ public partial class AudioFileViewModel : ObservableObject
         DcOffsetL = r.DcOffsetL;
         DcOffsetR = r.DcOffsetR;
         IntegratedLufs = r.IntegratedLufs;
+        OverallRmsDb = r.OverallRmsDb;
         SampleRate = r.SampleRate;
         BitDepth = r.BitDepth;
         Channels = r.Channels;
@@ -252,6 +254,22 @@ public partial class AudioFileViewModel : ObservableObject
             Description = "Средняя воспринимаемая громкость по стандарту ITU-R BS.1770-4. Показывает участие в 'войне громкости': чем громче → тем сильнее сжат звук. Стриминги приводят к −14 LUFS.",
             Typical = "<−16 LUFS — динамично (аудиофил)\n−14 LUFS — стриминг-цель\n−8..−11 — коммерческий стандарт\n>−7 LUFS — экстремально громко"
         });
+
+        // Overall RMS
+        var overallRms = r.OverallRmsDb;
+        if (overallRms < 0)
+        {
+            items.Add(new MetricItem
+            {
+                Category = "Динамика",
+                Name = "Общий RMS (средняя громкость)",
+                Value = $"{overallRms:F1} dBFS",
+                Status = overallRms > -6 ? "⚠ Громко" : overallRms > -12 ? "✓ Норма" : "✓ Тихо",
+                StatusColor = overallRms > -6 ? "#D29922" : "#2EA043",
+                Description = "Среднеквадратичный уровень всего трека. Аналог колонки 'RMS' в foobar2000. Чем ближе к 0 — тем громче.",
+                Typical = "−12..−6 dBFS — норма\n>−6 — очень громко\n<−12 — тихо"
+            });
+        }
 
         // PLR
         if (r.Plr > 0)

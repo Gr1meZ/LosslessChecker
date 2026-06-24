@@ -123,6 +123,7 @@ public class AudioAnalyzer
                 ClippingPercent = tpResult.ClippingPercent,
                 HasIsp = tpResult.HasIsp,
                 DynamicRange = drResult.Dr,
+                OverallRmsDb = ComputeOverallRms(buffer),
                 IntegratedLufs = lufsResult.IntegratedLufs,
                 LoudnessRange = lufsResult.LoudnessRange,
                 Plr = Math.Round(Math.Max(tpResult.TruePeakDbL, tpResult.TruePeakDbR) - lufsResult.IntegratedLufs, 1),
@@ -169,5 +170,20 @@ public class AudioAnalyzer
     {
         var ext = Path.GetExtension(filePath).ToUpperInvariant().TrimStart('.');
         return $"{ext} {sampleRate / 1000.0:F0}kHz/{bitDepth}bit";
+    }
+
+    private static double ComputeOverallRms(StereoBuffer buffer)
+    {
+        double sumSq = 0;
+        int n = buffer.Length;
+        for (int i = 0; i < n; i++)
+        {
+            double s = buffer.IsStereo
+                ? (buffer.Left[i] + buffer.Right[i]) * 0.5
+                : buffer.Left[i];
+            sumSq += s * s;
+        }
+        double rms = Math.Sqrt(sumSq / n);
+        return Math.Round(20.0 * Math.Log10(Math.Max(rms, 1e-10)), 1);
     }
 }

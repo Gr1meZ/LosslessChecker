@@ -30,6 +30,7 @@ public record AnalysisResult
 
     // Dynamics
     public double DynamicRange { get; init; }
+    public double OverallRmsDb { get; init; }
     public double IntegratedLufs { get; init; }
     public double LoudnessRange { get; init; }
     public double Plr { get; init; }
