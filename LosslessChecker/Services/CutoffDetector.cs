@@ -17,28 +17,31 @@ public class CutoffDetector
 
         var fft = new Fft(FftSize);
         var window = Window.Hann(FftSize);
-        var avgMagnitudes = new double[FftSize / 2];
+        var avgPower = new double[FftSize / 2];
         int frameCount = 0;
+
+        var frame = new float[FftSize];
+        var real = new float[FftSize];
+        var imag = new float[FftSize];
 
         for (int pos = 0; pos + FftSize <= samples.Length; pos += HopSize)
         {
-            var frame = new float[FftSize];
             Array.Copy(samples, pos, frame, 0, FftSize);
             for (int i = 0; i < FftSize; i++) frame[i] *= window[i];
-            var real = new float[FftSize];
-            var imag = new float[FftSize];
             Array.Copy(frame, real, FftSize);
+            Array.Clear(imag, 0, FftSize);
             fft.Direct(real, imag);
             for (int i = 0; i < FftSize / 2; i++)
-                avgMagnitudes[i] += Math.Sqrt(real[i] * real[i] + imag[i] * imag[i]);
+                avgPower[i] += (double)real[i] * real[i] + (double)imag[i] * imag[i];
             frameCount++;
         }
 
         if (frameCount == 0)
             return (nyquist, 0, Array.Empty<double>());
 
-        for (int i = 0; i < avgMagnitudes.Length; i++)
-            avgMagnitudes[i] /= frameCount;
+        var avgMagnitudes = new double[FftSize / 2];
+        for (int i = 0; i < avgPower.Length; i++)
+            avgMagnitudes[i] = Math.Sqrt(avgPower[i] / frameCount);
 
         var (cutoff, cutoffSlope) = FindCutoffByDerivative(avgMagnitudes, nyquist);
         return (cutoff, cutoffSlope, avgMagnitudes);
@@ -95,14 +98,17 @@ public class CutoffDetector
             smoothed[i] = sum / count;
         }
 
-        // 4. Compute sliding slope in dB/octave across a 30-bin window
-        // (30 bins at 44.1kHz ≈ 323 Hz — wide enough to catch brickwall, narrow enough for precision)
+        // 4. Compute sliding slope in dB/octave across a 30-bin window.
+        // Scan left-to-right; weight slopes by normalized frequency so that
+        // brickwalls near Nyquist (codec cutoff) are preferred over steeper
+        // but lower-frequency internal mix filters (e.g. synth LP at 8 kHz).
         const int windowBins = 30;
         double freqPerBin = nyquist / bins;
-        double bestSlope = 0;
+        double bestWeightedSlope = 0; // weighted: more negative = better
         int bestBin = bins - 1;
+        double bestRawSlope = 0;
 
-        int searchStart = bins / 3; // Skip lowest 1/3 (not relevant for cutoff)
+        int searchStart = bins / 3;
 
         for (int center = searchStart; center < bins - windowBins / 2; center++)
         {
@@ -110,14 +116,13 @@ public class CutoffDetector
             int wEnd = Math.Min(bins - 1, center + windowBins / 2);
             if (wEnd - wStart < 10) continue;
 
-            // Linear regression: dB vs log2(freq)
             double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
             int n = 0;
             for (int i = wStart; i <= wEnd; i++)
             {
                 double freq = i * freqPerBin;
                 if (freq < 1) continue;
-                double x = Math.Log2(freq / 1000.0); // log2(kHz)
+                double x = Math.Log2(freq / 1000.0);
                 double y = smoothed[i];
                 sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x; n++;
             }
@@ -127,34 +132,55 @@ public class CutoffDetector
             if (Math.Abs(denom) < 1e-10) continue;
             double slope = (n * sumXY - sumX * sumY) / denom;
 
-            // We want the MOST NEGATIVE slope (steepest drop)
-            if (slope < bestSlope)
+            // Weight: slopes at higher frequencies get a bonus (more negative weight).
+            // A -20 dB/oct at 20 kHz beats a -25 dB/oct at 8 kHz.
+            double freqWeight = (double)center / bins;
+            double weightedSlope = slope * (0.8 + 0.2 * freqWeight);
+
+            if (weightedSlope < bestWeightedSlope)
             {
-                bestSlope = slope;
+                bestWeightedSlope = weightedSlope;
+                bestRawSlope = slope;
                 bestBin = center;
             }
         }
 
         // 5. Classify based on slope
         double cutoffHz;
-        if (bestSlope < -18)
+        if (bestRawSlope < -18)
         {
-            // Brickwall: MP3/AAC encoder hard low-pass
-            cutoffHz = (double)bestBin / bins * nyquist;
+            cutoffHz = SubBinFrequency(bestBin, bins, nyquist, smoothed);
         }
-        else if (bestSlope < -10)
+        else if (bestRawSlope < -10)
         {
-            // Mild filtering: could be gentle anti-aliasing or 320kbps MP3
-            cutoffHz = (double)bestBin / bins * nyquist;
+            cutoffHz = SubBinFrequency(bestBin, bins, nyquist, smoothed);
         }
         else
         {
-            // Natural rolloff: no encoder cutoff detected → return Nyquist
             cutoffHz = nyquist;
-            bestSlope = 0; // Don't report slope if no cutoff found
+            bestRawSlope = 0;
         }
 
-        return (cutoffHz, Math.Round(bestSlope, 2));
+        return (cutoffHz, Math.Round(bestRawSlope, 2));
+    }
+
+    private static double SubBinFrequency(int bestBin, int bins, double nyquist, double[] smoothed)
+    {
+        double binFreq = (double)bestBin / bins * nyquist;
+        if (bestBin <= 0 || bestBin >= smoothed.Length - 1)
+            return binFreq;
+
+        double y0 = smoothed[bestBin - 1];
+        double y1 = smoothed[bestBin];
+        double y2 = smoothed[bestBin + 1];
+
+        double denom = y0 - 2 * y1 + y2;
+        if (Math.Abs(denom) < 1e-10)
+            return binFreq;
+
+        double delta = 0.5 * (y0 - y2) / denom;
+        delta = Math.Clamp(delta, -0.5, 0.5);
+        return (bestBin + delta) / bins * nyquist;
     }
 
     public (string encoderMatch, string shelfType) ClassifyCutoff(
@@ -193,11 +219,12 @@ public class CutoffDetector
         return (encoderMatch, shelfType);
     }
 
-    public bool IsFakeHiRes(double cutoffHz, int sampleRate)
+    public bool IsFakeHiRes(double cutoffHz, string shelfType, int sampleRate)
     {
-        // Hi-Res = sample rate >= 88.2 kHz
         if (sampleRate < 88200) return false;
-        // If cutoff is below 22 kHz on a Hi-Res file, it's a fake upscale
-        return cutoffHz < 22000;
+        // Fake Hi-Res = brickwall at ~CD Nyquist (20–22.1 kHz) on a high-rate file.
+        // Real acoustic recordings may have natural rolloff at 18-20 kHz,
+        // but they won't have a brickwall shelf at exactly 22.05 kHz.
+        return shelfType == "Brickwall" && cutoffHz >= 20000 && cutoffHz <= 22100;
     }
 }

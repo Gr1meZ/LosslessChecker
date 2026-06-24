@@ -16,7 +16,7 @@ public static class TestSignalGenerator
             double t = (double)i / sampleRate;
             double freq = startFreq + (endFreq - startFreq) * (t / duration);
             phase += TwoPi * freq / sampleRate;
-            samples[i] = (float)Math.Sin(phase);
+            samples[i] = MathF.Sin((float)phase);
         }
         return samples;
     }

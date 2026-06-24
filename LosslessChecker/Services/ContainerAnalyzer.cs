@@ -1,5 +1,5 @@
 using System.IO;
-using System.Security.Cryptography;
+using LosslessChecker.Services.Verification;
 
 namespace LosslessChecker.Services;
 
@@ -21,7 +21,7 @@ public class ContainerAnalyzer
 
         return new ContainerResult(
             isCdAligned, flacOk, source, isMqa, mqaDetails, isHdcd,
-            ComputePcmMd5(samples));
+            PcmHasher.ComputePcmMd5(samples));
     }
 
     private static bool CheckFlacIntegrity(string filePath, float[] samples)
@@ -68,24 +68,7 @@ public class ContainerAnalyzer
         return true; // Can't verify, assume OK
     }
 
-    public static byte[] ComputePcmMd5(float[] samples)
-    {
-        using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
-        var chunk = new byte[8192];
-        for (int pos = 0; pos < samples.Length; pos += 4096)
-        {
-            int count = Math.Min(4096, samples.Length - pos);
-            int bytesWritten = 0;
-            for (int i = 0; i < count; i++)
-            {
-                short val = (short)Math.Max(-32768, Math.Min(32767, (int)(samples[pos + i] * 32767.0)));
-                chunk[bytesWritten++] = (byte)(val & 0xFF);
-                chunk[bytesWritten++] = (byte)((val >> 8) & 0xFF);
-            }
-            md5.AppendData(chunk, 0, bytesWritten);
-        }
-        return md5.GetHashAndReset();
-    }
+    public static byte[] ComputePcmMd5(float[] samples) => PcmHasher.ComputePcmMd5(samples);
 
     private static (bool isMqa, string details) CheckMqa(float[] samples, int sampleRate)
     {

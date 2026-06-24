@@ -5,111 +5,128 @@ namespace LosslessChecker.Services.Analyzers;
 public class LufsMeter
 {
     private const double BlockDuration = 0.4;
+    private const double HopDuration = 0.1;
     private const double AbsoluteGate = -70.0;
     private const double RelativeGate = -10.0;
+    private const double ChannelWeight = 1.0;
 
     public LufsResult Analyze(StereoBuffer buffer)
-        => AnalyzeMono(ToMono(buffer), buffer.SampleRate);
-
-    public LufsResult AnalyzeSpan(ReadOnlySpan<float> mono, int sampleRate)
-        => AnalyzeMono(mono, sampleRate);
-
-    private static LufsResult AnalyzeMono(ReadOnlySpan<float> mono, int sampleRate)
     {
+        int sampleRate = buffer.SampleRate;
         int blockSize = (int)(sampleRate * BlockDuration);
-        if (blockSize < 1 || mono.Length < blockSize)
+        int hopSize = (int)(sampleRate * HopDuration);
+
+        if (blockSize < 1 || buffer.Length < blockSize)
             return new LufsResult(-100, 0);
 
-        double omegaHp = 2.0 * Math.PI * 38.0 / sampleRate;
-        double hpCoeff = Math.Exp(-omegaHp);
-        double omegaSh = 2.0 * Math.PI * 1500.0 / sampleRate;
-        double shCoeff = 0.5 * (1.0 - Math.Exp(-omegaSh));
+        var kwL = new KWeightingFilter(sampleRate);
+        var kwR = new KWeightingFilter(sampleRate);
 
         var blockLoudness = new List<double>();
-        double hpX1 = 0, hpY1 = 0, shX1 = 0;
+        var shortTermLoudness = new List<double>();
 
-        for (int pos = 0; pos + blockSize <= mono.Length; pos += blockSize)
+        int stBlockSize = (int)(sampleRate * 3.0);
+        int stHopSize = (int)(sampleRate * 1.0);
+
+        int n = buffer.Length;
+        var right = buffer.IsStereo ? buffer.Right : buffer.Left;
+
+        for (int pos = 0; pos + blockSize <= n; pos += hopSize)
         {
-            double sumSq = 0;
+            double sumSqL = 0, sumSqR = 0;
             int end = pos + blockSize;
-            // Inlined K-weight filter — no per-sample method call overhead
+
+            kwL.Reset();
+            kwR.Reset();
+
             for (int i = pos; i < end; i++)
             {
-                double sample = mono[i];
-                double hpOut = hpCoeff * hpY1 + hpCoeff * (sample - hpX1);
-                hpX1 = sample;
-                hpY1 = hpOut;
-                double shOut = hpOut + shCoeff * (hpOut - shX1);
-                shX1 = hpOut;
-                sumSq += shOut * shOut;
+                double filteredL = kwL.Process(buffer.Left[i]);
+                double filteredR = kwR.Process(right[i]);
+                sumSqL += filteredL * filteredL;
+                sumSqR += filteredR * filteredR;
             }
-            double rms = Math.Sqrt(sumSq / blockSize);
-            double loudness = -0.691 + 10.0 * Math.Log10(Math.Max(rms * rms, 1e-10));
+
+            double meanSq = (ChannelWeight * sumSqL + ChannelWeight * sumSqR) / blockSize;
+            double loudness = -0.691 + 10.0 * Math.Log10(Math.Max(meanSq, 1e-12));
             blockLoudness.Add(loudness);
         }
 
         if (blockLoudness.Count == 0)
             return new LufsResult(-100, 0);
 
-        // Absolute gate
-        double absoluteSum = 0;
-        int absoluteCount = 0;
-        foreach (var b in blockLoudness)
+        for (int pos = 0; pos + stBlockSize <= n; pos += stHopSize)
         {
-            if (b > AbsoluteGate)
+            double sumSqL = 0, sumSqR = 0;
+            int end = pos + stBlockSize;
+
+            kwL.Reset();
+            kwR.Reset();
+
+            for (int i = pos; i < end; i++)
             {
-                absoluteSum += Math.Pow(10, b / 10);
-                absoluteCount++;
+                double filteredL = kwL.Process(buffer.Left[i]);
+                double filteredR = kwR.Process(right[i]);
+                sumSqL += filteredL * filteredL;
+                sumSqR += filteredR * filteredR;
             }
+
+            double meanSq = (ChannelWeight * sumSqL + ChannelWeight * sumSqR) / stBlockSize;
+            double stLoudness = -0.691 + 10.0 * Math.Log10(Math.Max(meanSq, 1e-12));
+            shortTermLoudness.Add(stLoudness);
         }
 
-        double absoluteLoudness = absoluteCount > 0
-            ? -0.691 + 10.0 * Math.Log10(absoluteSum / absoluteCount)
-            : -70.0;
-
-        double relativeThreshold = absoluteLoudness + RelativeGate;
-        double gatedSum = 0;
-        int gatedCount = 0;
-        foreach (var b in blockLoudness)
-        {
-            if (b > relativeThreshold)
-            {
-                gatedSum += Math.Pow(10, b / 10);
-                gatedCount++;
-            }
-        }
-
-        double integratedLufs = gatedCount > 0
-            ? -0.691 + 10.0 * Math.Log10(gatedSum / gatedCount)
-            : -70.0;
-
-        // LRA
-        var loudBlocks = blockLoudness.Where(b => b > AbsoluteGate).OrderBy(b => b).ToList();
-        double lra = 0;
-        if (loudBlocks.Count >= 10)
-        {
-            int lowIdx = (int)(loudBlocks.Count * 0.10);
-            int highIdx = (int)(loudBlocks.Count * 0.95);
-            lra = loudBlocks[highIdx] - loudBlocks[lowIdx];
-        }
+        double integratedLufs = ComputeIntegratedLoudness(blockLoudness);
+        double lra = ComputeLoudnessRange(shortTermLoudness);
 
         return new LufsResult(Math.Round(integratedLufs, 1), Math.Round(lra, 1));
     }
 
-    private static float[] ToMono(StereoBuffer buffer)
+    public LufsResult AnalyzeSpan(ReadOnlySpan<float> mono, int sampleRate)
     {
-        int n = buffer.Length;
-        var mono = new float[n];
-        if (buffer.IsStereo)
-        {
-            for (int i = 0; i < n; i++)
-                mono[i] = (buffer.Left[i] + buffer.Right[i]) * 0.5f;
-        }
-        else
-        {
-            Array.Copy(buffer.Left, mono, n);
-        }
-        return mono;
+        var buffer = new StereoBuffer(mono.ToArray(), Array.Empty<float>(), sampleRate);
+        return Analyze(buffer);
+    }
+
+    private static double ComputeIntegratedLoudness(List<double> blockLoudness)
+    {
+        var absoluteGated = blockLoudness.Where(b => b > AbsoluteGate).ToList();
+        if (absoluteGated.Count == 0)
+            return -70.0;
+
+        double absoluteMeanLin = absoluteGated.Average(b => Math.Pow(10, b / 10));
+        double absoluteLoudness = -0.691 + 10.0 * Math.Log10(absoluteMeanLin);
+
+        double relativeThreshold = absoluteLoudness + RelativeGate;
+
+        var relativeGated = absoluteGated.Where(b => b > relativeThreshold).ToList();
+        if (relativeGated.Count == 0)
+            return absoluteLoudness;
+
+        double gatedMeanLin = relativeGated.Average(b => Math.Pow(10, b / 10));
+        return -0.691 + 10.0 * Math.Log10(gatedMeanLin);
+    }
+
+    private static double ComputeLoudnessRange(List<double> shortTermLoudness)
+    {
+        var gated = shortTermLoudness.Where(b => b > AbsoluteGate).ToList();
+        if (gated.Count < 10)
+            return 0;
+
+        double meanLin = gated.Average(b => Math.Pow(10, b / 10));
+        double meanLoudness = -0.691 + 10.0 * Math.Log10(meanLin);
+        double relThreshold = meanLoudness + RelativeGate;
+
+        var relGated = gated.Where(b => b > relThreshold).OrderBy(b => b).ToList();
+        if (relGated.Count < 10)
+            return 0;
+
+        int lowIdx = (int)Math.Ceiling(relGated.Count * 0.10) - 1;
+        int highIdx = (int)Math.Ceiling(relGated.Count * 0.95) - 1;
+        lowIdx = Math.Max(0, lowIdx);
+        highIdx = Math.Min(relGated.Count - 1, highIdx);
+
+        return relGated[highIdx] - relGated[lowIdx];
     }
 }
 

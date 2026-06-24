@@ -35,14 +35,14 @@ public class CutoffDetectorTests
     }
 
     [Fact]
-    public void FakeHiRes_96kHz_NoHf_ReturnsTrue()
+    public void FakeHiRes_96kHz_BrickwallNearCdNyquist_ReturnsTrue()
     {
-        Assert.True(_detector.IsFakeHiRes(21999, 96000));
+        Assert.True(_detector.IsFakeHiRes(22000, "Brickwall", 96000));
     }
 
     [Fact]
-    public void NotFakeHiRes_96kHz_WithHf_ReturnsFalse()
+    public void NotFakeHiRes_96kHz_NaturalRolloff_ReturnsFalse()
     {
-        Assert.False(_detector.IsFakeHiRes(40000, 96000));
+        Assert.False(_detector.IsFakeHiRes(20000, "Natural", 96000));
     }
 }

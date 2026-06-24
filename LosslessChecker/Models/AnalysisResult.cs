@@ -61,6 +61,11 @@ public record AnalysisResult
     public string MqaDetails { get; init; } = "";
     public bool IsHdcd { get; init; }
 
+    public string? PcmMd5Hex { get; init; }
+    public string? AccurateRipHash { get; init; }
+    public bool? HashVerified { get; init; }
+    public int? HashConfidence { get; init; }
+
     public bool HasAliasing { get; init; }
     public bool HasRinging { get; init; }
     public string ResamplingVerdict { get; init; } = "";

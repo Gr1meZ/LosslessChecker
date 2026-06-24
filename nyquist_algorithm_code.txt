@@ -1,0 +1,208 @@
+=== NYQUIST ALGORITHM — LOSSLESSCHECKER (compressed, 9 source files, no tests) ===
+Core formula: nyquist = sampleRate / 2
+
+===[1] CutoffDetector.cs — main algorithm (FFT → derivative → cutoff)===
+using NWaves.Transforms;using NWaves.Windows;
+namespace LosslessChecker.Services;
+public class CutoffDetector{
+const int FftSize=4096,HopSize=2048;
+public(double cutoff,double cutoffSlope,double[] spectrum)DetectFull(float[] samples,int sampleRate){
+ var nyquist=sampleRate/2.0;
+ if(samples.Length<FftSize)return(nyquist,0,Array.Empty<double>());
+ var fft=new Fft(FftSize);var window=Window.Hann(FftSize);
+ var avgMagnitudes=new double[FftSize/2];int frameCount=0;
+ for(int pos=0;pos+FftSize<=samples.Length;pos+=HopSize){
+  var frame=new float[FftSize];Array.Copy(samples,pos,frame,0,FftSize);
+  for(int i=0;i<FftSize;i++)frame[i]*=window[i];
+  var real=new float[FftSize];var imag=new float[FftSize];Array.Copy(frame,real,FftSize);
+  fft.Direct(real,imag);
+  for(int i=0;i<FftSize/2;i++)avgMagnitudes[i]+=Math.Sqrt(real[i]*real[i]+imag[i]*imag[i]);
+  frameCount++;}
+ if(frameCount==0)return(nyquist,0,Array.Empty<double>());
+ for(int i=0;i<avgMagnitudes.Length;i++)avgMagnitudes[i]/=frameCount;
+ var(cutoff,cutoffSlope)=FindCutoffByDerivative(avgMagnitudes,nyquist);
+ return(cutoff,cutoffSlope,avgMagnitudes);}
+public double DetectCutoff(float[] samples,int sampleRate)=>DetectFull(samples,sampleRate).cutoff;
+public(double cutoff,double[] spectrum)DetectWithSpectrum(float[] samples,int sampleRate){var r=DetectFull(samples,sampleRate);return(r.cutoff,r.spectrum);}
+// Algo: 1)avg spectrum→dB(ref=peak in low band) 2)smooth 5-bin MA 3)sliding slope dB/oct via linear regression over 30-bin window 4)find steepest negative slope in upper 2/3 5)slope←18= brickwall→cutoff at that bin 6)slope≥-10=natural→return nyquist 7)[-18,-10]=mild→cutoff at that bin
+static(double cutoff,double cutoffSlope)FindCutoffByDerivative(double[] avgMagnitudes,double nyquist){
+ int bins=avgMagnitudes.Length;if(bins<10)return(nyquist,0);
+ double peakMag=0;for(int i=0;i<bins/6;i++)peakMag=Math.Max(peakMag,avgMagnitudes[i]);
+ if(peakMag<=0)return(nyquist,0);
+ var spectrumDb=new double[bins];for(int i=0;i<bins;i++)spectrumDb[i]=20.0*Math.Log10(Math.Max(avgMagnitudes[i],1e-10)/peakMag);
+ var smoothed=new double[bins];
+ for(int i=0;i<bins;i++){double sum=0;int count=0;for(int j=Math.Max(0,i-2);j<=Math.Min(bins-1,i+2);j++){sum+=spectrumDb[j];count++;}smoothed[i]=sum/count;}
+ const int windowBins=30;double freqPerBin=nyquist/bins;double bestSlope=0;int bestBin=bins-1;int searchStart=bins/3;
+ for(int center=searchStart;center<bins-windowBins/2;center++){
+  int wStart=Math.Max(1,center-windowBins/2),wEnd=Math.Min(bins-1,center+windowBins/2);
+  if(wEnd-wStart<10)continue;
+  double sumX=0,sumY=0,sumXY=0,sumX2=0;int n=0;
+  for(int i=wStart;i<=wEnd;i++){
+   double freq=i*freqPerBin;if(freq<1)continue;
+   double x=Math.Log2(freq/1000.0),y=smoothed[i];
+   sumX+=x;sumY+=y;sumXY+=x*y;sumX2+=x*x;n++;}
+  if(n<5)continue;double denom=n*sumX2-sumX*sumX;if(Math.Abs(denom)<1e-10)continue;
+  double slope=(n*sumXY-sumX*sumY)/denom;if(slope<bestSlope){bestSlope=slope;bestBin=center;}}
+ double cutoffHz;
+ if(bestSlope<-18)cutoffHz=(double)bestBin/bins*nyquist;
+ else if(bestSlope<-10)cutoffHz=(double)bestBin/bins*nyquist;
+ else{cutoffHz=nyquist;bestSlope=0;}
+ return(cutoffHz,Math.Round(bestSlope,2));}
+public(string encoderMatch,string shelfType)ClassifyCutoff(double cutoffHz,double cutoffSlope,int sampleRate){
+ var nyquist=sampleRate/2.0;double ratio=nyquist>0?cutoffHz/nyquist:1.0;
+ string shelfType=cutoffSlope switch{<-18=>"Brickwall",<-10=>"Filtered",_=>"Natural"};
+ string encoderMatch=cutoffHz switch{<=16500=>"MP3 128-192",<=18500=>"MP3 192-256",<=20000=>"MP3 320/AAC 256",<=21500=>"Possible LP filter",_=>"None"};
+ if(ratio>=0.95)encoderMatch="None";
+ if(ratio>=0.90&&shelfType=="Brickwall")shelfType="Natural";//ADC anti-aliasing,not codec brickwall
+ return(encoderMatch,shelfType);}
+public bool IsFakeHiRes(double cutoffHz,int sampleRate){if(sampleRate<88200)return false;return cutoffHz<22000;}}
+
+===[2] ArtifactDetector.cs — Nyquist for FFT bin mapping===
+using NWaves.Transforms;using NWaves.Windows;
+namespace LosslessChecker.Services;
+public class ArtifactDetector{
+const int FftSize=4096,HopSize=1024;
+public(bool hasArtifacts,string level,string artifactType)Detect(float[] samples,int sampleRate,double cutoffFrequency){
+ if(samples.Length<FftSize*2)return(false,"None","None");
+ var nyquist=sampleRate/2.0;var cutoffBin=(int)(cutoffFrequency/nyquist*(FftSize/2));
+ cutoffBin=Math.Max(1,Math.Min(cutoffBin,FftSize/2-1));
+ var fft=new Fft(FftSize);var window=Window.Hann(FftSize);
+ double totalFlatness=0,totalSlope=0;int frameCount=0;
+ for(int pos=0;pos+FftSize<=samples.Length;pos+=HopSize){
+  var frame=new float[FftSize];Array.Copy(samples,pos,frame,0,FftSize);
+  for(int i=0;i<FftSize;i++)frame[i]*=window[i];
+  var real=new float[FftSize];var imag=new float[FftSize];Array.Copy(frame,real,FftSize);fft.Direct(real,imag);
+  var mags=new double[FftSize/2];for(int i=0;i<FftSize/2;i++)mags[i]=Math.Sqrt(real[i]*real[i]+imag[i]*imag[i]);
+  int aboveStart=cutoffBin,aboveEnd=Math.Min(cutoffBin+80,mags.Length-1);
+  if(aboveEnd>aboveStart+10){double geomMean=0,arithMean=0;int count=0;
+   for(int i=aboveStart;i<aboveEnd;i++){var v=Math.Max(mags[i],1e-10);geomMean+=Math.Log(v);arithMean+=v;count++;}
+   if(count>0&&arithMean>0){geomMean=Math.Exp(geomMean/count);arithMean/=count;totalFlatness+=geomMean/arithMean;}}
+  int slopeStart=Math.Max(1,cutoffBin-40),slopeEnd=Math.Min(cutoffBin+40,mags.Length-1);
+  if(slopeEnd-slopeStart>10){double sumX=0,sumY=0,sumXY=0,sumX2=0;int n=0;
+   for(int i=slopeStart;i<slopeEnd;i++){double x=i,y=Math.Max(mags[i],1e-10),yDb=20.0*Math.Log10(y);sumX+=x;sumY+=yDb;sumXY+=x*yDb;sumX2+=x*x;n++;}
+   double slope=(n*sumXY-sumX*sumY)/(n*sumX2-sumX*sumX);totalSlope+=slope;}
+  frameCount++;}
+ if(frameCount==0)return(false,"None","None");
+ double avgFlatness=totalFlatness/frameCount,avgSlope=totalSlope/frameCount;
+ double cutoffRatio=cutoffFrequency/(sampleRate/2.0);if(cutoffRatio>0.95)return(false,"None","None");//skip if cutoff near Nyquist
+ bool hasArtifacts;string level;
+ if(avgFlatness>0.5&&avgSlope<-0.12)(hasArtifacts,level)=(true,"Strong");
+ else if(avgFlatness>0.35&&avgSlope<-0.08)(hasArtifacts,level)=(true,"Medium");
+ else if(avgFlatness>0.2||avgSlope<-0.06)(hasArtifacts,level)=(true,"Weak");
+ else(hasArtifacts,level)=(false,"None");
+ string artifactType=level switch{"Strong"or"Medium"=>DetectMp3Sizzle(samples,sampleRate,cutoffFrequency)?"MP3":"Unknown","Weak"=>"Unknown",_=>"None"};
+ return(hasArtifacts,level,artifactType);}
+static bool DetectMp3Sizzle(float[] samples,int sampleRate,double cutoffFreq){
+ if(sampleRate<44100)return false;int fftSize=4096;
+ var fft=new Fft(fftSize);var window=Window.Hann(fftSize);double sizzleEnergy=0,totalHfEnergy=0;int frames=0;
+ int bin15500=(int)(15500.0/(sampleRate/2.0)*(fftSize/2));
+ int bin16500=(int)(16500.0/(sampleRate/2.0)*(fftSize/2));
+ int cutoffBin=Math.Min((int)(cutoffFreq/(sampleRate/2.0)*(fftSize/2)),fftSize/2-1);
+ for(int pos=0;pos+fftSize<=samples.Length;pos+=1024){
+  var frame=new float[fftSize];Array.Copy(samples,pos,frame,0,fftSize);
+  for(int i=0;i<fftSize;i++)frame[i]*=window[i];
+  var real=new float[fftSize];var imag=new float[fftSize];Array.Copy(frame,real,fftSize);fft.Direct(real,imag);
+  for(int i=bin15500;i<bin16500&&i<real.Length/2;i++)sizzleEnergy+=real[i]*real[i]+imag[i]*imag[i];
+  for(int i=bin15500;i<cutoffBin&&i<real.Length/2;i++)totalHfEnergy+=real[i]*real[i]+imag[i]*imag[i];
+  frames++;if(frames>=20)break;}
+ if(frames==0||totalHfEnergy<=0)return false;return sizzleEnergy/totalHfEnergy>0.4;}}
+
+===[3] UpscaleDetector.cs — Nyquist for HF detection above 22kHz===
+namespace LosslessChecker.Services;
+public class UpscaleDetector{
+public(bool isUpscale,string verdict,double maxHfDb)Detect(double[] averagedSpectrum,int sampleRate){
+ int nyquist=sampleRate/2;
+ if(sampleRate<88200)return(false,"Standard sample rate, no upscale check needed.",0);
+ int binsAbove22k=(int)((nyquist-22050.0)/nyquist*averagedSpectrum.Length);
+ int startBin=averagedSpectrum.Length-binsAbove22k;
+ if(startBin>=averagedSpectrum.Length||startBin<1)return(false,"Insufficient bins for HF analysis.",0);
+ double peakBelow=0;for(int i=0;i<startBin/2;i++)peakBelow=Math.Max(peakBelow,averagedSpectrum[i]);
+ double maxHf=0;for(int i=startBin;i<averagedSpectrum.Length;i++)maxHf=Math.Max(maxHf,averagedSpectrum[i]);
+ if(peakBelow<=0)return(false,"No reference signal.",0);
+ double maxHfDb=20.0*Math.Log10(Math.Max(maxHf,1e-10)/peakBelow);
+ if(maxHfDb<-50){bool isDither=HasDitherSignature(averagedSpectrum,startBin);
+  return(true,isDither?$"Hi-Res({sampleRate}Hz)no content>22kHz(max{maxHfDb:F0}dB).Flat dither—upscale from CD.":$"Hi-Res({sampleRate}Hz)no content>22kHz(max{maxHfDb:F0}dB).Likely upscale.",maxHfDb);}
+ if(maxHfDb<-30)return(true,$"Weak HF>22kHz({maxHfDb:F0}dB).Questionable Hi-Res.",maxHfDb);
+ return(false,$"Valid Hi-Res content>22kHz({maxHfDb:F0}dB).",maxHfDb);}
+static bool HasDitherSignature(double[] spectrum,int startBin){
+ if(startBin+20>=spectrum.Length)return false;
+ double sum=0,sumSq=0;int count=0;
+ for(int i=startBin;i<spectrum.Length;i++){double db=20.0*Math.Log10(Math.Max(spectrum[i],1e-10));sum+=db;sumSq+=db*db;count++;}
+ if(count<10)return false;double mean=sum/count;return(sumSq/count-mean*mean)<9.0;}}
+
+===[4] LosslessScorer.cs — penalty based on cutoff/Nyquist ratio===
+using LosslessChecker.Models;
+namespace LosslessChecker.Services.Analysis;
+public class LosslessScorer{
+public double Score(AnalysisResult r){
+ double score=100;var nyquist=r.SampleRate/2.0;double ratio=nyquist>0?r.CutoffFrequency/nyquist:1.0;
+ if(ratio<0.65)score-=50;else if(ratio<0.75)score-=40;else if(ratio<0.85)score-=25;else if(ratio<0.90)score-=10;else if(ratio<0.95)score-=3;
+ if(r.ArtifactLevel=="Strong")score-=35;else if(r.ArtifactLevel=="Medium")score-=20;else if(r.ArtifactLevel=="Weak")score-=8;
+ if(r.ShelfType=="Brickwall"&&ratio<0.95)score-=15;else if(r.ShelfType=="Filtered"&&ratio<0.90)score-=8;
+ if(r.LsbZeroPadded)score-=20;else if(r.BitDepthSuspicious)score-=8;
+ if(r.IsUpscale)score-=25;
+ return Math.Max(0,Math.Min(100,score));}
+public double ScoreHiRes(AnalysisResult r){
+ if(r.SampleRate<88200)return 0;double score=100;
+ if(r.MaxHfDb<-50)score-=60;else if(r.MaxHfDb<-30)score-=30;else if(r.MaxHfDb<-20)score-=10;
+ if(r.CutoffFrequency<22000)score-=40;if(r.IsUpscale)score-=40;
+ return Math.Max(0,Math.Min(100,score));}
+public string Classify(AnalysisResult r){var s=Score(r);if(s>=90)return"TRUE LOSSLESS";if(s>=70)return"TRUE LOSSLESS";if(s>=50)return"SUSPICIOUS";return"FAKE LOSSLESS";}}
+
+===[5] AudioAnalyzer.cs — Nyquist-relevant fragments (orchestrator)===
+// Nyquist-dependent pipeline in Analyze():
+var(cutoffHz,cutoffSlope,spectrum)=_cutoff.DetectFull(mono,sampleRate);
+var(encoderMatch,shelfType)=_cutoff.ClassifyCutoff(cutoffHz,cutoffSlope,sampleRate);
+bool isFakeHiRes=_cutoff.IsFakeHiRes(cutoffHz,sampleRate);
+var(hasArtifacts,artifactLevel,artifactType)=_artifacts.Detect(mono,sampleRate,cutoffHz);
+var(isUpscale,upscaleVerdict,maxHfDb)=_upscale.Detect(spectrum,sampleRate);
+// MetricsCoverage uses Nyquist ratio:
+if(r.CutoffFrequency/(r.SampleRate/2.0)>=0.90)passed++;
+
+===[6] AnalysisResult.cs — data model (Nyquist-dependent fields)===
+namespace LosslessChecker.Models;
+public record AnalysisResult{
+ public string FilePath{get;init;}="";public string FileName{get;init;}="";public string Format{get;init;}="";
+ public string Artist{get;init;}="";public string Album{get;init;}="";public string Genre{get;init;}="";
+ public int SampleRate{get;init;}public int BitDepth{get;init;}public int Channels{get;init;}public double DurationSeconds{get;init;}
+ public byte[]?CoverData{get;init;}
+ public double CutoffFrequency{get;init;}public double CutoffSlope{get;init;}public string ShelfType{get;init;}="";public string EncoderMatch{get;init;}="";
+ public bool HasArtifacts{get;init;}public string ArtifactLevel{get;init;}="None";public string ArtifactType{get;init;}="None";
+ public double SamplePeakDb{get;init;}public double TruePeakDb{get;init;}public double ClippingPercent{get;init;}public bool HasIsp{get;init;}
+ public double DynamicRange{get;init;}public double OverallRmsDb{get;init;}public double IntegratedLufs{get;init;}public double LoudnessRange{get;init;}public double Plr{get;init;}
+ public bool BitDepthSuspicious{get;init;}public bool LsbZeroPadded{get;init;}public int EffectiveBitDepth{get;init;}public double DcOffsetL{get;init;}public double DcOffsetR{get;init;}
+ public double Correlation{get;init;}public bool IsMonoCompatible{get;init;}
+ public bool IsUpscale{get;init;}public double MaxHfDb{get;init;}
+ public string Authenticity{get;init;}="";public double LosslessScore{get;init;}public double HiResScore{get;init;}
+ public int QualityScore{get;init;}public double QualityScorePercent{get;init;}public double MetricsCoverage{get;init;}
+ public string Decision{get;init;}="";public string Verdict{get;init;}="";public string StructuredReport{get;init;}="";
+ public AnalysisStatus AnalysisStatus{get;init;}=AnalysisStatus.Pending;public string?ErrorMessage{get;init;}
+ public byte[] SpectrogramFlat{get;init;}=Array.Empty<byte>();public int SpectrogramWidth{get;init;}public int SpectrogramHeight{get;init;}}
+
+===[7] AudioFileViewModel.cs — Nyquist display in UI===
+// BuildMetricItems() Nyquist-relevant part:
+var nyquist=r.SampleRate/2.0;
+var cutoffRatio=nyquist>0?r.CutoffFrequency/nyquist:1.0;
+// Cutoff metric: Value=$"{r.CutoffFrequency:F0}Hz({cutoffRatio*100:F0}%Nyquist)"
+// Nyquist metric: Value=$"{nyquist:F0}Hz"  Description="Kotelnikov theorem: useful signal=SampleRate/2"
+
+===[8] MainViewModel.cs — SelectedNyquist property===
+[ObservableProperty]private double _selectedNyquist=22050;
+public void OnSelectionChanged(AudioFileViewModel?selected){
+ SelectedCutoffFrequency=selected.CutoffFrequency;
+ SelectedNyquist=selected.SampleRate>0?selected.SampleRate/2.0:22050;}
+
+===[9] MainWindow.xaml — Nyquist label in UI===
+<TextBlock Foreground="#585b70" FontSize="11">
+ <Run Text="Nyquist: "/><Run Text="{Binding SelectedNyquist,StringFormat={}{0:F0}}" FontWeight="Bold"/><Run Text=" Hz"/>
+</TextBlock>
+
+=== ARCHITECTURE SUMMARY ===
+ nyquist=sampleRate/2 — computed independently by each detector
+ pipeline: AudioAnalyzer→CutoffDetector(FFT→derivative slope→cutoff Hz or nyquist if natural)
+  → ClassifyCutoff(cutoffHz/nyquist ratio→Brickwall/Filtered/Natural+encoder guess)
+  → ArtifactDetector(Hz→bin via nyquist→flatness+slope analysis)
+  → UpscaleDetector((nyquist-22050)/nyquist→bins above CD Nyquist→HF energy)
+  → LosslessScorer(cutoff/nyquist ratio→penalty table)
+  → UI displays nyquist Hz + cutoff as %Nyquist
+=== END ===

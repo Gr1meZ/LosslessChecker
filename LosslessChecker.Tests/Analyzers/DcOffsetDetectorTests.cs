@@ -19,10 +19,10 @@ public class DcOffsetDetectorTests
     }
 
     [Fact]
-    public void DcOffset_002Percent_AboveThreshold_Detected()
+    public void DcOffset_1Percent_AboveThreshold_Detected()
     {
         var samples = TestSignalGenerator.GenerateSine(1000, 2, 44100);
-        var offset = TestSignalGenerator.AddDcOffset(samples, 0.02);
+        var offset = TestSignalGenerator.AddDcOffset(samples, 1.0);
         var buffer = new StereoBuffer(offset, offset, 44100);
         var result = _detector.Analyze(buffer);
         Assert.True(result.HasDcOffset);

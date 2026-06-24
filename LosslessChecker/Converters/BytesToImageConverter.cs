@@ -12,8 +12,9 @@ public class BytesToImageConverter : IValueConverter
         if (value is byte[] bytes && bytes.Length > 0)
         {
             var bmp = new BitmapImage();
+            using var ms = new MemoryStream(bytes);
             bmp.BeginInit();
-            bmp.StreamSource = new MemoryStream(bytes);
+            bmp.StreamSource = ms;
             bmp.CacheOption = BitmapCacheOption.OnLoad;
             bmp.EndInit();
             bmp.Freeze();

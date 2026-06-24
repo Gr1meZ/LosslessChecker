@@ -13,7 +13,6 @@ public class DrMeterTests
     {
         var samples = TestSignalGenerator.GenerateSine(1000, 20, 44100, 0.1);
         var (dr, _, _) = _meter.Analyze(samples, 44100);
-        // Pure sine crest = 3 dB, minus 3 dB calibration ≈ 0
         Assert.True(dr >= 0, $"Expected DR >= 0, got {dr}");
     }
 
@@ -32,5 +31,29 @@ public class DrMeterTests
         var result = _meter.AnalyzeStereo(buffer);
         Assert.True(result.Dr >= 0);
         Assert.True(result.DrLeft >= 0);
+    }
+
+    [Fact]
+    public void Silence_DoesNotCrash_ReturnsZeroDr()
+    {
+        var samples = new float[44100 * 5];
+        var (dr, peak, clip) = _meter.Analyze(samples, 44100);
+        Assert.False(double.IsNaN(dr));
+        Assert.False(double.IsInfinity(dr));
+        Assert.False(double.IsNaN(peak));
+        Assert.False(double.IsInfinity(peak));
+    }
+
+    [Fact]
+    public void WhiteNoise_ReturnsSaneValues()
+    {
+        var rng = new System.Random(42);
+        var samples = new float[44100 * 5];
+        for (int i = 0; i < samples.Length; i++)
+            samples[i] = (float)(rng.NextDouble() * 0.5 - 0.25);
+        var (dr, peak, clip) = _meter.Analyze(samples, 44100);
+        Assert.False(double.IsNaN(dr));
+        Assert.False(double.IsInfinity(dr));
+        Assert.True(dr >= 0, $"Expected DR >= 0 for noise, got {dr}");
     }
 }

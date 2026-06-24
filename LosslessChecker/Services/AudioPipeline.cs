@@ -2,6 +2,7 @@ using System.IO;
 using LosslessChecker.Models;
 using LosslessChecker.Services.Analyzers;
 using LosslessChecker.Services.Analysis;
+using LosslessChecker.Services.Verification;
 
 namespace LosslessChecker.Services;
 
@@ -156,7 +157,7 @@ public class AudioPipeline
                 HasIsp = tpResult.HasIsp,
                 HasHardClipping = tpResult.ClippingPercent > 0,
                 DynamicRange = drResult.Dr,
-                OverallRmsDb = ComputeOverallRms(mono),
+                OverallRmsDb = ComputeOverallRms(buffer),
                 IntegratedLufs = lufsResult.IntegratedLufs,
                 LoudnessRange = lufsResult.LoudnessRange,
                 Plr = Math.Round(Math.Max(tpResult.TruePeakDbL, tpResult.TruePeakDbR) - lufsResult.IntegratedLufs, 1),
@@ -178,6 +179,7 @@ public class AudioPipeline
                 IsMqa = containerResult.IsMqa,
                 MqaDetails = containerResult.MqaDetails,
                 IsHdcd = containerResult.IsHdcd,
+                PcmMd5Hex = PcmHasher.ToHexString(containerResult.PcmMd5),
                 HasAliasing = resamplingResult.HasAliasing,
                 HasRinging = resamplingResult.HasRinging,
                 ResamplingVerdict = resamplingResult.Verdict,
@@ -278,12 +280,26 @@ public class AudioPipeline
         return Math.Max(0, Math.Min(100, score));
     }
 
-    private static double ComputeOverallRms(float[] mono)
+    private static double ComputeOverallRms(StereoBuffer buffer)
     {
         double sumSq = 0;
-        int n = mono.Length;
-        for (int i = 0; i < n; i++)
-            sumSq += (double)mono[i] * mono[i];
+        long n = buffer.Length;
+        if (buffer.IsStereo)
+        {
+            var left = buffer.Left;
+            var right = buffer.Right;
+            for (int i = 0; i < n; i++)
+            {
+                double m = (left[i] + right[i]) * 0.5;
+                sumSq += m * m;
+            }
+        }
+        else
+        {
+            var left = buffer.Left;
+            for (int i = 0; i < n; i++)
+                sumSq += (double)left[i] * left[i];
+        }
         double rms = Math.Sqrt(sumSq / n);
         return Math.Round(20.0 * Math.Log10(Math.Max(rms, 1e-10)), 1);
     }

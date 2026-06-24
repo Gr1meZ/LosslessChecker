@@ -4,52 +4,44 @@ namespace LosslessChecker.Services.Analysis;
 
 public class QualityScorer
 {
+    private readonly ScoringProfile _p;
+
+    public QualityScorer(ScoringProfile? profile = null) => _p = profile ?? ScoringProfile.Default;
+
     public (double scorePercent, string decision) Score(AnalysisResult r)
     {
         double score = 100;
 
-        // DR: critical weight
-        if (r.DynamicRange < 3) score -= 25;
-        else if (r.DynamicRange < 5) score -= 15;
-        else if (r.DynamicRange < 6) score -= 8;
+        foreach (var (threshold, penalty) in _p.DrThresholds)
+            if (r.DynamicRange < threshold) { score -= penalty; break; }
 
-        // Clipping: high weight
-        if (r.ClippingPercent > 5) score -= 20;
-        else if (r.ClippingPercent > 2) score -= 12;
-        else if (r.ClippingPercent > 0.5) score -= 6;
-        else if (r.ClippingPercent > 0) score -= 2;
+        foreach (var (threshold, penalty) in _p.ClippingThresholds)
+            if (r.ClippingPercent > threshold) { score -= penalty; break; }
 
-        // True Peak ISP: high weight
         if (r.HasIsp)
         {
-            score -= 8;
-            if (r.TruePeakDb > 1.0) score -= 5;
+            score -= _p.IspBasePenalty;
+            if (r.TruePeakDb > 1.0) score -= _p.IspExtraPenalty;
         }
 
-        // LUFS: medium weight
-        if (r.IntegratedLufs > -7) score -= 15;
-        else if (r.IntegratedLufs > -10) score -= 8;
-        else if (r.IntegratedLufs > -14) score -= 3;
+        foreach (var (threshold, penalty) in _p.LufsThresholds)
+            if (r.IntegratedLufs > threshold) { score -= penalty; break; }
 
-        // DC Offset: low weight
-        if (Math.Abs(r.DcOffsetL) > 0.05 || Math.Abs(r.DcOffsetR) > 0.05) score -= 8;
-        else if (Math.Abs(r.DcOffsetL) > 0.01 || Math.Abs(r.DcOffsetR) > 0.01) score -= 3;
+        if (Math.Abs(r.DcOffsetL) > _p.DcOffsetHighThreshold || Math.Abs(r.DcOffsetR) > _p.DcOffsetHighThreshold) score -= _p.DcOffsetHighPenalty;
+        else if (Math.Abs(r.DcOffsetL) > _p.DcOffsetLowThreshold || Math.Abs(r.DcOffsetR) > _p.DcOffsetLowThreshold) score -= _p.DcOffsetLowPenalty;
 
-        // Phase: medium weight
-        if (r.Correlation < -0.5) score -= 12;
-        else if (r.Correlation < 0) score -= 6;
+        if (r.Correlation < _p.PhaseBadThreshold) score -= _p.PhaseBadPenalty;
+        else if (r.Correlation < 0) score -= _p.PhaseSuspiciousPenalty;
 
-        // LSB zero-pad: low weight
-        if (r.LsbZeroPadded) score -= 5;
+        if (r.LsbZeroPadded) score -= _p.LsbZeroPadQualityPenalty;
 
         score = Math.Max(0, Math.Min(100, score));
 
-        // Decision
         string decision;
         if (r.Authenticity == "TRUE LOSSLESS")
         {
-            if (score >= 80) decision = "KEEP";
-            else if (score >= 50) decision = "KEEP";
+            if (score >= _p.QualityExcellentThreshold) decision = "KEEP";
+            else if (score >= _p.QualityKeepThreshold) decision = "KEEP";
             else decision = "KEEP (poor master)";
         }
         else if (r.Authenticity == "SUSPICIOUS")

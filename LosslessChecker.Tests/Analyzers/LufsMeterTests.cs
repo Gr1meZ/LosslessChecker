@@ -28,4 +28,29 @@ public class LufsMeterTests
         var rl = _meter.Analyze(new StereoBuffer(loud, loud, 44100));
         Assert.True(rl.IntegratedLufs > rq.IntegratedLufs);
     }
+
+    [Fact]
+    public void Silence_DoesNotCrash_ReturnsLowLufs()
+    {
+        var samples = new float[44100 * 3];
+        var buffer = new StereoBuffer(samples, samples, 44100);
+        var result = _meter.Analyze(buffer);
+        Assert.False(double.IsNaN(result.IntegratedLufs));
+        Assert.False(double.IsInfinity(result.IntegratedLufs));
+        Assert.True(result.IntegratedLufs < -40);
+    }
+
+    [Fact]
+    public void WhiteNoise_Returns_ReasonableLufs()
+    {
+        var rng = new System.Random(42);
+        var samples = new float[44100 * 3];
+        for (int i = 0; i < samples.Length; i++)
+            samples[i] = (float)(rng.NextDouble() * 0.5 - 0.25);
+        var buffer = new StereoBuffer(samples, samples, 44100);
+        var result = _meter.Analyze(buffer);
+        Assert.False(double.IsNaN(result.IntegratedLufs));
+        Assert.False(double.IsInfinity(result.IntegratedLufs));
+        Assert.True(result.IntegratedLufs > -40);
+    }
 }

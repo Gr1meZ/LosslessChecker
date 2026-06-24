@@ -1,42 +1,60 @@
 using LosslessChecker.Models;
+using LosslessChecker.Services.ChunkProcessing;
 
 namespace LosslessChecker.Services.Analyzers;
 
-public class PhaseAnalyzer
+public class PhaseAnalyzer : IChunkAccumulator<PhaseResult>
 {
     private const int BlockSize = 4096;
+    private readonly List<double> _correlations = new();
+    private double _sumXY, _sumX2, _sumY2;
+    private int _samplesInBlock;
 
     public PhaseResult Analyze(StereoBuffer buffer)
     {
-        if (!buffer.IsStereo)
-            return new PhaseResult(1.0, true);
-
+        if (!buffer.IsStereo) return new PhaseResult(1.0, true);
+        _correlations.Clear();
+        _sumXY = _sumX2 = _sumY2 = 0;
+        _samplesInBlock = 0;
         int maxLen = Math.Min(buffer.Left.Length, buffer.Right.Length);
-        var correlations = new List<double>();
-        for (int pos = 0; pos + BlockSize <= maxLen; pos += BlockSize)
-        {
-            double sumXY = 0, sumX2 = 0, sumY2 = 0;
-            for (int i = pos; i < pos + BlockSize; i++)
-            {
-                double x = buffer.Left[i];
-                double y = buffer.Right[i];
-                sumXY += x * y;
-                sumX2 += x * x;
-                sumY2 += y * y;
-            }
+        for (int i = 0; i < maxLen; i++)
+            AddSample(buffer.Left[i], buffer.Right[i]);
+        FlushBlock();
+        return BuildResult();
+    }
 
-            double denom = Math.Sqrt(sumX2 * sumY2);
-            double corr = denom > 1e-10 ? sumXY / denom : 0;
-            correlations.Add(corr);
-        }
+    public void AddChunk(ReadOnlySpan<float> mono)
+    {
+        for (int i = 0; i < mono.Length; i++) AddSample(mono[i], mono[i]);
+    }
 
-        double avgCorrelation = correlations.Count > 0
-            ? Math.Round(correlations.Average(), 2)
-            : 1.0;
+    public void AddChunk(ReadOnlySpan<float> left, ReadOnlySpan<float> right)
+    {
+        int n = Math.Min(left.Length, right.Length);
+        for (int i = 0; i < n; i++) AddSample(left[i], right[i]);
+    }
 
-        bool isMonoCompatible = avgCorrelation >= 0;
+    private void AddSample(float x, float y)
+    {
+        _sumXY += x * y; _sumX2 += x * x; _sumY2 += y * y;
+        if (++_samplesInBlock >= BlockSize) FlushBlock();
+    }
 
-        return new PhaseResult(avgCorrelation, isMonoCompatible);
+    private void FlushBlock()
+    {
+        if (_samplesInBlock == 0) return;
+        double denom = Math.Sqrt(_sumX2 * _sumY2);
+        _correlations.Add(denom > 1e-10 ? _sumXY / denom : 0);
+        _sumXY = _sumX2 = _sumY2 = 0;
+        _samplesInBlock = 0;
+    }
+
+    public PhaseResult GetResult() => BuildResult();
+
+    private PhaseResult BuildResult()
+    {
+        double avg = _correlations.Count > 0 ? Math.Round(_correlations.Average(), 2) : 1.0;
+        return new PhaseResult(avg, avg >= 0);
     }
 }
 

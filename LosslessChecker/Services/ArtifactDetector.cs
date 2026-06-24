@@ -24,23 +24,25 @@ public class ArtifactDetector
         double totalSlope = 0;
         int frameCount = 0;
 
+        var frame = new float[FftSize];
+        var real = new float[FftSize];
+        var imag = new float[FftSize];
+
         for (int pos = 0; pos + FftSize <= samples.Length; pos += HopSize)
         {
-            var frame = new float[FftSize];
             Array.Copy(samples, pos, frame, 0, FftSize);
 
             for (int i = 0; i < FftSize; i++)
                 frame[i] *= window[i];
 
-            var real = new float[FftSize];
-            var imag = new float[FftSize];
             Array.Copy(frame, real, FftSize);
+            Array.Clear(imag, 0, FftSize);
 
             fft.Direct(real, imag);
 
             var mags = new double[FftSize / 2];
             for (int i = 0; i < FftSize / 2; i++)
-                mags[i] = Math.Sqrt(real[i] * real[i] + imag[i] * imag[i]);
+                mags[i] = MathF.Sqrt(real[i] * real[i] + imag[i] * imag[i]);
 
             // Wider analysis band: 80 bins above cutoff (~864 Hz)
             int aboveStart = cutoffBin;
@@ -141,21 +143,23 @@ public class ArtifactDetector
         int bin16500 = (int)(16500.0 / (sampleRate / 2.0) * (fftSize / 2));
         int cutoffBin = Math.Min((int)(cutoffFreq / (sampleRate / 2.0) * (fftSize / 2)), fftSize / 2 - 1);
 
+        var sizzleFrame = new float[fftSize];
+        var sizzleReal = new float[fftSize];
+        var sizzleImag = new float[fftSize];
+
         for (int pos = 0; pos + fftSize <= samples.Length; pos += 1024)
         {
-            var frame = new float[fftSize];
-            Array.Copy(samples, pos, frame, 0, fftSize);
-            for (int i = 0; i < fftSize; i++) frame[i] *= window[i];
-            var real = new float[fftSize];
-            var imag = new float[fftSize];
-            Array.Copy(frame, real, fftSize);
-            fft.Direct(real, imag);
+            Array.Copy(samples, pos, sizzleFrame, 0, fftSize);
+            for (int i = 0; i < fftSize; i++) sizzleFrame[i] *= window[i];
+            Array.Copy(sizzleFrame, sizzleReal, fftSize);
+            Array.Clear(sizzleImag, 0, fftSize);
+            fft.Direct(sizzleReal, sizzleImag);
 
-            for (int i = bin15500; i < bin16500 && i < real.Length / 2; i++)
-                sizzleEnergy += real[i] * real[i] + imag[i] * imag[i];
+            for (int i = bin15500; i < bin16500 && i < sizzleReal.Length / 2; i++)
+                sizzleEnergy += sizzleReal[i] * sizzleReal[i] + sizzleImag[i] * sizzleImag[i];
 
-            for (int i = bin15500; i < cutoffBin && i < real.Length / 2; i++)
-                totalHfEnergy += real[i] * real[i] + imag[i] * imag[i];
+            for (int i = bin15500; i < cutoffBin && i < sizzleReal.Length / 2; i++)
+                totalHfEnergy += sizzleReal[i] * sizzleReal[i] + sizzleImag[i] * sizzleImag[i];
 
             frames++;
             if (frames >= 20) break;
@@ -164,5 +168,58 @@ public class ArtifactDetector
         if (frames == 0 || totalHfEnergy <= 0) return false;
         double ratio = sizzleEnergy / totalHfEnergy;
         return ratio > 0.4;
+    }
+
+    public (bool hasPreEcho, int preEchoCount) DetectPreEcho(float[] samples, int sampleRate)
+    {
+        if (samples.Length < sampleRate) return (false, 0);
+        int windowMs = 5; // 5 ms window — typical MP3 pre-echo duration
+        int windowSamples = sampleRate * windowMs / 1000;
+        int preEchoCount = 0;
+        double prevRms = 0;
+
+        for (int pos = 0; pos + windowSamples * 2 <= samples.Length; pos += windowSamples)
+        {
+            double rmsBefore = 0, rmsAfter = 0;
+            for (int i = pos; i < pos + windowSamples; i++)
+                rmsBefore += samples[i] * samples[i];
+            for (int i = pos + windowSamples; i < pos + windowSamples * 2; i++)
+                rmsAfter += samples[i] * samples[i];
+            rmsBefore = Math.Sqrt(rmsBefore / windowSamples);
+            rmsAfter = Math.Sqrt(rmsAfter / windowSamples);
+
+            // Pre-echo: noise burst before a transient
+            // Transient detected as sudden 4x+ amplitude increase
+            if (rmsAfter > prevRms * 4.0 && rmsBefore > rmsAfter * 0.15)
+                preEchoCount++;
+            prevRms = rmsAfter;
+        }
+
+        return (preEchoCount > 3, preEchoCount);
+    }
+
+    public bool DetectSpectralHoles(double[] avgSpectrum, double nyquist)
+    {
+        int bins = avgSpectrum.Length;
+        if (bins < 100) return false;
+
+        // MP3 spectral holes: isolated bins with unusually low energy
+        // surrounded by higher energy bins (psychoacoustic masking removal)
+        int searchStart = bins / 6; // Skip bass, focus on mids/highs
+        int holeCount = 0;
+        double prevDb = 20.0 * Math.Log10(Math.Max(avgSpectrum[searchStart], 1e-10));
+
+        for (int i = searchStart + 1; i < bins - 1; i++)
+        {
+            double db = 20.0 * Math.Log10(Math.Max(avgSpectrum[i], 1e-10));
+            double nextDb = 20.0 * Math.Log10(Math.Max(avgSpectrum[i + 1], 1e-10));
+
+            // Spectral hole: bin dips > 15 dB below neighbors, then recovers
+            if (db < prevDb - 15 && nextDb > db + 10)
+                holeCount++;
+            prevDb = db;
+        }
+
+        return holeCount > bins / 50; // More than ~2% of bins have holes
     }
 }
