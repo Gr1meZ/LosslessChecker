@@ -94,7 +94,7 @@ public class AudioPipeline
                 };
             }
 
-            // mono is the single shared buffer — Left channel from decoder
+            // mono is the Left channel for spectral analysis
             var mono = buffer.Left;
 
             var (cutoffHz, cutoffSlope, spectrum) = _cutoff.DetectFull(mono, sampleRate);
@@ -103,39 +103,32 @@ public class AudioPipeline
 
             if (ct.IsCancellationRequested) return Cancelled(result);
 
-            var (hasArtifacts, artifactLevel, artifactType) =
-                _artifacts.Detect(mono, sampleRate, cutoffHz);
-            if (ct.IsCancellationRequested) return Cancelled(result);
-
-            var tpResult = _truePeak.Analyze(buffer);
-            if (ct.IsCancellationRequested) return Cancelled(result);
-
-            var lufsResult = _lufs.Analyze(buffer);
-            if (ct.IsCancellationRequested) return Cancelled(result);
-
-            var drResult = _dr.AnalyzeStereo(buffer);
-            if (ct.IsCancellationRequested) return Cancelled(result);
-
-            var dcResult = _dcOffset.Analyze(buffer);
-            if (ct.IsCancellationRequested) return Cancelled(result);
-
-            var phaseResult = _phase.Analyze(buffer);
-            if (ct.IsCancellationRequested) return Cancelled(result);
-
-            var bitResult = _bitDepth.ValidateStereo(buffer, bitDepth);
-            if (ct.IsCancellationRequested) return Cancelled(result);
+            var artifactTask = Task.Run(() => _artifacts.Detect(mono, sampleRate, cutoffHz), ct);
+            var tpTask = Task.Run(() => _truePeak.Analyze(buffer), ct);
+            var lufsTask = Task.Run(() => _lufs.Analyze(buffer), ct);
+            var drTask = Task.Run(() => _dr.AnalyzeStereo(buffer), ct);
+            var dcTask = Task.Run(() => _dcOffset.Analyze(buffer), ct);
+            var phaseTask = Task.Run(() => _phase.Analyze(buffer), ct);
+            var bitTask = Task.Run(() => _bitDepth.ValidateStereo(buffer, bitDepth), ct);
+            var spectroTask = Task.Run(() => _spectro.Build(mono, sampleRate), ct);
 
             var (isUpscale, upscaleVerdict, maxHfDb) = _upscale.Detect(spectrum, sampleRate);
-            if (ct.IsCancellationRequested) return Cancelled(result);
-
             var vinylResult = _vinyl.Detect(spectrum, sampleRate, mono);
             var containerResult = _container.Analyze(fileInfo.FilePath, mono, sampleRate);
             var (hasPreEcho, preEchoCount) = _artifacts.DetectPreEcho(mono, sampleRate);
             bool hasSpectralHoles = _artifacts.DetectSpectralHoles(spectrum, sampleRate / 2.0);
-
-            var spectroData = _spectro.Build(mono, sampleRate);
-
             var resamplingResult = _resampling.DetectFromSpectrum(spectrum, sampleRate);
+
+            if (ct.IsCancellationRequested) return Cancelled(result);
+
+            var (hasArtifacts, artifactLevel, artifactType) = artifactTask.Result;
+            var tpResult = tpTask.Result;
+            var lufsResult = lufsTask.Result;
+            var drResult = drTask.Result;
+            var dcResult = dcTask.Result;
+            var phaseResult = phaseTask.Result;
+            var bitResult = bitTask.Result;
+            var spectroData = spectroTask.Result;
 
             if (ct.IsCancellationRequested) return Cancelled(result);
 

@@ -262,7 +262,7 @@
                 </StackPanel>
 
                 <DataGrid Grid.Row="1" x:Name="FilesGrid"
-                      ItemsSource="{Binding FilteredFiles}" AutoGenerateColumns="False"
+                       ItemsSource="{Binding FilesView}" AutoGenerateColumns="False"
                       IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                        Background="{DynamicResource BgPrimaryBrush}" Foreground="{DynamicResource FgPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
                        RowBackground="{DynamicResource BgPrimaryBrush}" AlternatingRowBackground="{DynamicResource GridAltRowBrush}"

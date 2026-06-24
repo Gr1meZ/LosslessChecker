@@ -78,6 +78,9 @@ public partial class AudioFileViewModel : ObservableObject
     private int _spectroWidth, _spectroHeight;
     private AnalysisResult? _lastResult;
     internal AnalysisResult? LastResult => _lastResult;
+    public float[]? RawSpectrogram => _rawSpectro;
+    public int SpectroWidth => _spectroWidth;
+    public int SpectroHeight => _spectroHeight;
 
     public AudioFileViewModel(AudioFileInfo fileInfo)
     {
@@ -87,8 +90,8 @@ public partial class AudioFileViewModel : ObservableObject
 
     public void ApplyResult(AnalysisResult r)
     {
-        _lastResult = r;
-        FileName = r.FileName;
+        _lastResult = r with { SpectrogramDb = null };
+        _rawSpectro = r.SpectrogramDb;        FileName = r.FileName;
         Format = r.Format;
         CutoffFrequency = r.CutoffFrequency;
         DynamicRange = r.DynamicRange;
@@ -571,18 +574,15 @@ public partial class AudioFileViewModel : ObservableObject
         if (SpectrogramBitmap != null) return SpectrogramBitmap;
         if (_rawSpectro == null || _spectroWidth < 1 || _spectroHeight < 1) return null;
 
-        if (_lastResult == null) return null;
-
         var bmp = _spectroRenderer.Render(_rawSpectro, _spectroWidth, _spectroHeight);
-
         SpectrogramBitmap = bmp;
-        _rawSpectro = null;
         return bmp;
     }
 
     public void ClearSpectrogramData()
     {
         _rawSpectro = null;
+        SpectrogramBitmap = null;
     }
 
     [RelayCommand]

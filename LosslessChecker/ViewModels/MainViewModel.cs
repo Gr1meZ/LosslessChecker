@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -20,8 +22,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<AudioFileViewModel> _files = new();
 
-    [ObservableProperty]
-    private ObservableCollection<AudioFileViewModel> _filteredFiles = new();
+    private HashSet<AudioFileViewModel>? _selectionFilter;
+
+    public ICollectionView FilesView { get; }
 
     [ObservableProperty]
     private ObservableCollection<ArtistGroup> _artistGroups = new();
@@ -56,7 +59,36 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _sortAscending = true;
 
-    private IEnumerable<AudioFileViewModel> _baseFiles = Enumerable.Empty<AudioFileViewModel>();
+    public MainViewModel()
+    {
+        FilesView = CollectionViewSource.GetDefaultView(_files);
+        FilesView.Filter = FilterFile;
+    }
+
+    private bool FilterFile(object obj)
+    {
+        if (obj is not AudioFileViewModel f)
+            return false;
+
+        if (_selectionFilter != null && !_selectionFilter.Contains(f))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            if (!f.FileName.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) &&
+                (f.Artist?.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ?? false) == false &&
+                (f.Album?.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ?? false) == false)
+                return false;
+        }
+
+        bool matchesVerdict =
+            ((f.VerdictLabel == "LOSSLESS" || f.VerdictLabel == "HI-RES") && ShowKeep) ||
+            (f.VerdictLabel == "NOT SURE" && ShowInvestigate) ||
+            (f.VerdictLabel == "REPLACE" && ShowReplace) ||
+            (f.VerdictLabel.StartsWith("MP3") && ShowMp3);
+
+        return matchesVerdict;
+    }
 
     [ObservableProperty]
     private int _totalFiles;
@@ -121,20 +153,21 @@ public partial class MainViewModel : ObservableObject
         {
             case ArtistGroup artist:
                 SelectedGroup = null;
-                _baseFiles = artist.Albums.SelectMany(a => a.Tracks);
+                _selectionFilter = new HashSet<AudioFileViewModel>(
+                    artist.Albums.SelectMany(a => a.Tracks));
                 break;
             case AlbumGroup album:
                 SelectedGroup = album;
-                _baseFiles = album.Tracks;
+                _selectionFilter = new HashSet<AudioFileViewModel>(album.Tracks);
                 break;
             case AudioFileViewModel track:
                 SelectedGroup = null;
-                _baseFiles = new[] { track };
+                _selectionFilter = new HashSet<AudioFileViewModel> { track };
                 SelectedFile = track;
                 break;
             default:
                 SelectedGroup = null;
-                _baseFiles = Files;
+                _selectionFilter = null;
                 break;
         }
         ApplyFilters();
@@ -142,25 +175,10 @@ public partial class MainViewModel : ObservableObject
 
     public void ApplyFilters()
     {
-        var filtered = _baseFiles.AsEnumerable();
-
-        if (!string.IsNullOrWhiteSpace(SearchQuery))
-            filtered = filtered.Where(f =>
-                f.FileName.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
-                (f.Artist?.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (f.Album?.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ?? false));
-
-        filtered = filtered.Where(f =>
-            ((f.VerdictLabel == "LOSSLESS" || f.VerdictLabel == "HI-RES") && ShowKeep) ||
-            (f.VerdictLabel == "NOT SURE" && ShowInvestigate) ||
-            (f.VerdictLabel == "REPLACE" && ShowReplace) ||
-            (f.VerdictLabel.StartsWith("MP3") && ShowMp3));
-
-        var sorted = SortAscending
-            ? filtered.OrderBy(f => GetPropertyValue(f, SortColumn))
-            : filtered.OrderByDescending(f => GetPropertyValue(f, SortColumn));
-
-        FilteredFiles = new ObservableCollection<AudioFileViewModel>(sorted);
+        FilesView.SortDescriptions.Clear();
+        var direction = SortAscending ? ListSortDirection.Ascending : ListSortDirection.Descending;
+        FilesView.SortDescriptions.Add(new SortDescription(SortColumn, direction));
+        FilesView.Refresh();
     }
 
     public void SortFiles(string columnName)
@@ -172,19 +190,6 @@ public partial class MainViewModel : ObservableObject
 
         ApplyFilters();
     }
-
-    private static object GetPropertyValue(AudioFileViewModel f, string column) => column switch
-    {
-        "FileName" => f.FileName,
-        "DurationSeconds" => f.DurationSeconds,
-        "Format" => f.Format,
-        "CutoffFrequency" => f.CutoffFrequency,
-        "DynamicRange" => f.DynamicRange,
-        "Authenticity" => f.Authenticity,
-        "QualityScorePercent" => f.QualityScorePercent,
-        "Decision" => f.VerdictLabel,
-        _ => f.FileName
-    };
 
     partial void OnSearchQueryChanged(string value) => ApplyFilters();
     partial void OnShowKeepChanged(bool value) => ApplyFilters();
@@ -288,7 +293,8 @@ public partial class MainViewModel : ObservableObject
         ReplaceCount = 0;
         Files.Clear();
         ArtistGroups.Clear();
-        FilteredFiles.Clear();
+        _selectionFilter = null;
+        FilesView.Refresh();
         SelectedGroup = null;
 
         _cts = new CancellationTokenSource();
@@ -347,7 +353,7 @@ public partial class MainViewModel : ObservableObject
             await Task.WhenAll(tasks);
 
             PopulateArtistGroups();
-            _baseFiles = Files;
+            _selectionFilter = null;
             ApplyFilters();
             ShowWelcome = Files.Count == 0;
         }
@@ -438,7 +444,7 @@ public partial class MainViewModel : ObservableObject
             });
             await Task.WhenAll(tasks);
             PopulateArtistGroups();
-            _baseFiles = Files;
+            _selectionFilter = null;
             ApplyFilters();
         }
         catch (OperationCanceledException) { }

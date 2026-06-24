@@ -55,17 +55,16 @@ public partial class MainWindow : Window
         if (_viewModel.SelectedFile == null) return;
 
         var vm = _viewModel.SelectedFile;
-        var lastResult = vm.LastResult;
 
-        if (lastResult?.SpectrogramDb is { Length: > 0 })
+        if (vm.RawSpectrogram is { Length: > 0 })
         {
             var window = new SpectrogramWindow(
-                lastResult.SpectrogramDb,
-                lastResult.SpectrogramWidth,
-                lastResult.SpectrogramHeight,
-                lastResult.DurationSeconds,
-                lastResult.SampleRate,
-                lastResult.CutoffFrequency,
+                vm.RawSpectrogram,
+                vm.SpectroWidth,
+                vm.SpectroHeight,
+                vm.DurationSeconds,
+                vm.SampleRate,
+                vm.CutoffFrequency,
                 vm.FileName);
             window.Owner = this;
             window.Show();

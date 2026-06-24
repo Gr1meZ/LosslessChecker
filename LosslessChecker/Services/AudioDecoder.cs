@@ -23,37 +23,57 @@ public class AudioDecoder
         int channels = format.Channels;
 
         long estimatedFrames = (long)(reader.TotalTime.TotalSeconds * sampleRate);
-        int initialCapacity = (int)Math.Min(estimatedFrames * channels + ReadChunkSize, int.MaxValue);
+        if (estimatedFrames < 1) estimatedFrames = sampleRate * 60;
+        int initialCapacity = (int)Math.Min(estimatedFrames + ReadChunkSize, int.MaxValue - ReadChunkSize);
 
-        var interleaved = new List<float>(initialCapacity);
-        var readBuffer = new float[ReadChunkSize];
+        var left = new float[initialCapacity];
+        var right = channels == 2 ? new float[initialCapacity] : Array.Empty<float>();
+        int frameCount = 0;
+
+        var readBuffer = new float[ReadChunkSize * channels];
         int read;
 
         while ((read = provider.Read(readBuffer, 0, readBuffer.Length)) > 0)
         {
             ct.ThrowIfCancellationRequested();
-            interleaved.AddRange(readBuffer.AsSpan(0, read));
+            int frames = read / channels;
+
+            if (frameCount + frames > left.Length)
+            {
+                int newSize = (int)Math.Min((long)left.Length * 2, int.MaxValue);
+                if (newSize < frameCount + frames)
+                    newSize = frameCount + frames;
+                Array.Resize(ref left, newSize);
+                if (channels == 2)
+                    Array.Resize(ref right, newSize);
+            }
+
+            if (channels == 1)
+            {
+                Array.Copy(readBuffer, 0, left, frameCount, frames);
+            }
+            else
+            {
+                for (int i = 0; i < frames; i++)
+                {
+                    left[frameCount + i] = readBuffer[i * 2];
+                    right[frameCount + i] = readBuffer[i * 2 + 1];
+                }
+            }
+
+            frameCount += frames;
         }
 
-        if (channels == 1)
+        if (frameCount == 0)
+            return new StereoBuffer(Array.Empty<float>(), Array.Empty<float>(), sampleRate);
+
+        if (frameCount < left.Length)
         {
-            var mono = interleaved.ToArray();
-            interleaved.Clear();
-            return new StereoBuffer(mono, Array.Empty<float>(), sampleRate);
+            Array.Resize(ref left, frameCount);
+            if (channels == 2)
+                Array.Resize(ref right, frameCount);
         }
 
-        int frameCount = interleaved.Count / channels;
-        var left = new float[frameCount];
-        var right = new float[frameCount];
-
-        var span = CollectionsMarshal.AsSpan(interleaved);
-        for (int i = 0; i < frameCount; i++)
-        {
-            left[i] = span[i * channels];
-            right[i] = span[i * channels + 1];
-        }
-
-        interleaved.Clear();
         return new StereoBuffer(left, right, sampleRate);
     }
 
