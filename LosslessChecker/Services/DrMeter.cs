@@ -4,167 +4,135 @@ namespace LosslessChecker.Services;
 
 public class DrMeter
 {
-    // TT DR Meter: 3-second blocks per the official algorithm
-    private const double BlockDurationSec = 3.0;
-    private const double TopPercentile = 0.2;
+    private const double BlockSec = 3.0;
+    private const double TopPct = 0.20;
+    private const double TrimPct = 0.10; // discard top 10% of selected 20% (transient protection)
     private const int ClipRunMin = 3;
 
+    /// <summary>Legacy: mono DR + clipping for tests</summary>
     public (double dr, double samplePeakDb, double clippingPercent) Analyze(float[] samples, int sampleRate)
     {
-        int blockSize = (int)(sampleRate * BlockDurationSec);
-        if (blockSize < 1 || samples.Length < blockSize)
-            return (0, 0, 0);
-
-        var blockPeaks = new List<double>(); // linear peak values
-        var blockRms = new List<double>();   // linear RMS values
-        double globalPeakLinear = double.MinValue;
-        int clippedRuns = 0;
-
-        for (int pos = 0; pos + blockSize <= samples.Length; pos += blockSize)
-        {
-            double sumSq = 0;
-            double maxAbs = 0;
-            int consecutive = 0;
-
-            for (int i = pos; i < pos + blockSize; i++)
-            {
-                float s = samples[i];
-                double abs = Math.Abs(s);
-                if (abs > maxAbs) maxAbs = abs;
-                if (abs > globalPeakLinear) globalPeakLinear = abs;
-
-                if (abs >= 1.0)
-                {
-                    consecutive++;
-                    if (consecutive >= ClipRunMin) clippedRuns++;
-                }
-                else consecutive = 0;
-
-                sumSq += (double)s * s;
-            }
-
-            double rms = Math.Sqrt(sumSq / blockSize);
-            blockRms.Add(rms);
-            blockPeaks.Add(maxAbs);
-        }
-
-        if (blockRms.Count < 3)
-            return (0, 0, 0);
-
-        double samplePeakDb = globalPeakLinear > double.MinValue
-            ? 20.0 * Math.Log10(Math.Max(globalPeakLinear, 1e-10))
-            : 0;
-
-        double clipPercent = (double)clippedRuns / (samples.Length / (double)ClipRunMin) * 100.0;
-
-        // Sort by LINEAR RMS descending
-        var indexed = blockRms
-            .Select((rms, i) => (rms, peak: blockPeaks[i]))
-            .OrderByDescending(x => x.rms)
-            .ToList();
-
-        int topCount = Math.Max(1, (int)(indexed.Count * TopPercentile));
-        var top = indexed.Take(topCount).ToList();
-
-        // Average peaks and RMS in dB domain (TT DR Meter spec: average dB of top 20%)
-        double avgPeakDb = top.Average(x => 20.0 * Math.Log10(Math.Max(x.peak, 1e-10)));
-        double avgRmsDb = top.Average(x => 20.0 * Math.Log10(Math.Max(x.rms, 1e-10)));
-
-        double dr = avgPeakDb - avgRmsDb;
-
-        return (Math.Round(dr, 1), Math.Round(samplePeakDb, 1), Math.Round(clipPercent, 2));
+        var (dr, peak, _) = ComputeChannelDr(samples, sampleRate);
+        int blockSize = (int)(sampleRate * BlockSec);
+        int numBlocks = samples.Length / blockSize;
+        double clipPct = numBlocks > 0 ? ComputeClipping(samples, blockSize, numBlocks) : 0;
+        return (Math.Round(dr, 1), Math.Round(peak, 1), Math.Round(clipPct, 2));
     }
 
+    /// <summary>TT DR Meter per ITU spec: per-channel DR, official = min(L,R)</summary>
     public DrResult AnalyzeStereo(StereoBuffer buffer)
     {
-        // Compute per-channel DR (foobar2000: DR is per-channel, official = min of L/R)
-        var (drL, peakL, clipL) = AnalyzeChannel(buffer.Left, buffer.SampleRate);
-        var (drR, peakR, clipR) = buffer.IsStereo
-            ? AnalyzeChannel(buffer.Right, buffer.SampleRate)
-            : (drL, peakL, clipL);
+        int blockSize = (int)(buffer.SampleRate * BlockSec);
+        int n = buffer.Length;
+        int numBlocks = n / blockSize;
+        if (numBlocks < 5) return new DrResult(0, 0, 0, 0, 0);
 
-        // Official DR = minimum of left and right (matching foobar2000)
-        double overallDr = Math.Min(drL, drR);
+        // Per-channel DR
+        var (drL, peakL, _) = ComputeChannelDr(buffer.Left, buffer.SampleRate);
+        var (drR, peakR, _) = buffer.IsStereo
+            ? ComputeChannelDr(buffer.Right, buffer.SampleRate)
+            : (drL, peakL, 0);
+
+        // Official DR = minimum of channels (matches foobar2000)
+        double officialDr = Math.Min(drL, drR);
+
+        // Global sample peak
         double overallPeak = Math.Max(peakL, peakR);
-        double overallClip = Math.Max(clipL, clipR);
+
+        // Clipping on mono downmix
+        var mono = new float[n];
+        for (int i = 0; i < n; i++)
+            mono[i] = buffer.IsStereo ? (buffer.Left[i] + buffer.Right[i]) * 0.5f : buffer.Left[i];
+        double clipPct = ComputeClipping(mono, blockSize, numBlocks);
 
         return new DrResult(
-            Math.Round(overallDr, 1), Math.Round(drL, 1), Math.Round(drR, 1),
-            Math.Round(overallPeak, 1), Math.Round(overallClip, 2));
+            Math.Round(officialDr, 1), Math.Round(drL, 1), Math.Round(drR, 1),
+            Math.Round(overallPeak, 1), Math.Round(clipPct, 2));
     }
 
-    private (double dr, double peakDb, double clipPercent) AnalyzeChannel(
+    /// <summary>Compute DR for a single channel of samples</summary>
+    private static (double dr, double peakDb, double clipPct) ComputeChannelDr(
         float[] samples, int sampleRate)
     {
-        int blockSize = (int)(sampleRate * BlockDurationSec);
-        if (blockSize < 1 || samples.Length < blockSize)
-            return (0, 0, 0);
+        int blockSize = (int)(sampleRate * BlockSec);
+        int numBlocks = samples.Length / blockSize;
+        if (numBlocks < 5) return (0, 0, 0);
 
-        var blockPeaks = new List<double>();
-        var blockRms = new List<double>();
-        double globalPeakLinear = double.MinValue;
-        int clippedRuns = 0;
+        var rmsDb = new List<double>(numBlocks);
+        var peakDb = new List<double>(numBlocks);
+        double globalPeak = 0;
 
-        for (int pos = 0; pos + blockSize <= samples.Length; pos += blockSize)
+        for (int b = 0; b < numBlocks; b++)
         {
-            double sumSq = 0;
-            double maxAbs = 0;
-            int consecutive = 0;
-
-            for (int i = pos; i < pos + blockSize; i++)
+            int start = b * blockSize;
+            double sumSq = 0, maxAbs = 0;
+            for (int i = start; i < start + blockSize; i++)
             {
                 float s = samples[i];
                 double abs = Math.Abs(s);
                 if (abs > maxAbs) maxAbs = abs;
-                if (abs > globalPeakLinear) globalPeakLinear = abs;
+                sumSq += (double)s * s;
+            }
+            if (maxAbs > globalPeak) globalPeak = maxAbs;
 
-                if (abs >= 1.0)
+            double rms = Math.Sqrt(sumSq / blockSize);
+            rmsDb.Add(20.0 * Math.Log10(Math.Max(rms, 1e-10)));
+            peakDb.Add(20.0 * Math.Log10(Math.Max(maxAbs, 1e-10)));
+        }
+
+        double dr = ComputeDr(rmsDb, peakDb);
+        double peak = globalPeak > 0 ? 20.0 * Math.Log10(globalPeak) : 0;
+        return (dr, peak, 0);
+    }
+
+    /// <summary>
+    /// TT DR Meter core algorithm:
+    /// 1. Sort blocks by RMS (descending)
+    /// 2. Take top 20% (loudest blocks)
+    /// 3. Discard top 10% of those (transient protection — removes ~2% of total)
+    /// 4. DR = avg(Peak_dB of remaining) − avg(RMS_dB of remaining)
+    /// </summary>
+    private static double ComputeDr(List<double> rmsDb, List<double> peakDb)
+    {
+        // Sort by RMS descending, keeping peaks aligned
+        var indexed = rmsDb
+            .Select((r, i) => (r, p: peakDb[i]))
+            .OrderByDescending(x => x.r)
+            .ToList();
+
+        // Top 20% of blocks (by RMS)
+        int top20Count = Math.Max(1, (int)(indexed.Count * TopPct));
+        var top20 = indexed.Take(top20Count).ToList();
+
+        // Discard top 10% of the selected 20% (transient protection)
+        int trimCount = (int)(top20.Count * TrimPct);
+        var working = top20.Skip(trimCount).ToList();
+        if (working.Count == 0) working = top20;
+
+        double avgPeak = working.Average(x => x.p);
+        double avgRms = working.Average(x => x.r);
+
+        return avgPeak - avgRms;
+    }
+
+    private static double ComputeClipping(float[] samples, int blockSize, int numBlocks)
+    {
+        int clippedRuns = 0;
+        for (int b = 0; b < numBlocks; b++)
+        {
+            int start = b * blockSize;
+            int consecutive = 0;
+            for (int i = start; i < start + blockSize; i++)
+            {
+                if (Math.Abs(samples[i]) >= 1.0f)
                 {
                     consecutive++;
                     if (consecutive >= ClipRunMin) clippedRuns++;
                 }
                 else consecutive = 0;
-
-                sumSq += (double)s * s;
             }
-
-            double rms = Math.Sqrt(sumSq / blockSize);
-            blockRms.Add(rms);
-            blockPeaks.Add(maxAbs);
         }
-
-        if (blockRms.Count < 3)
-            return (0, 0, 0);
-
-        double peakDb = globalPeakLinear > double.MinValue
-            ? 20.0 * Math.Log10(Math.Max(globalPeakLinear, 1e-10)) : 0;
-
-        double clipPercent = (double)clippedRuns / (samples.Length / (double)ClipRunMin) * 100.0;
-
-        // Sort by LINEAR RMS descending
-        var indexed = blockRms
-            .Select((rms, i) => (rms, peak: blockPeaks[i]))
-            .OrderByDescending(x => x.rms)
-            .ToList();
-
-        int topCount = Math.Max(1, (int)(indexed.Count * TopPercentile));
-        var top = indexed.Take(topCount).ToList();
-
-        // Average peaks and RMS in dB domain (TT DR Meter spec: average dB of top 20%)
-        double avgPeakDb = top.Average(x => 20.0 * Math.Log10(Math.Max(x.peak, 1e-10)));
-        double avgRmsDb = top.Average(x => 20.0 * Math.Log10(Math.Max(x.rms, 1e-10)));
-
-        double dr = avgPeakDb - avgRmsDb;
-
-        try
-        {
-            System.IO.File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lossless_dr_debug.log"),
-                $"{DateTime.Now:HH:mm:ss.fff} DR: avgPeak={avgPeakDb:F2} avgRMS={avgRmsDb:F2} dr={dr:F2} topCount={topCount}/{indexed.Count} nsamples={samples.Length}{Environment.NewLine}");
-        }
-        catch { }
-
-        return (dr, peakDb, clipPercent);
+        return (double)clippedRuns / (samples.Length / (double)ClipRunMin) * 100.0;
     }
 }
 
