@@ -17,6 +17,7 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly FileScanner _scanner = new();
     private readonly AudioAnalyzer _analyzer = new();
+    private readonly IDialogService _dialogService;
     private CancellationTokenSource? _cts;
 
     [ObservableProperty]
@@ -59,8 +60,11 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _sortAscending = true;
 
-    public MainViewModel()
+    public MainViewModel() : this(new DialogService()) { }
+
+    public MainViewModel(IDialogService dialogService)
     {
+        _dialogService = dialogService;
         FilesView = CollectionViewSource.GetDefaultView(_files);
         FilesView.Filter = FilterFile;
     }
@@ -145,6 +149,30 @@ public partial class MainViewModel : ObservableObject
         SelectedNyquist = selected.SampleRate > 0 ? selected.SampleRate / 2.0 : 22050;
         SpectrumTitle = selected.FileName;
         IsSpectrumVisible = true;
+        selected.GetOrBuildSpectrogram();
+    }
+
+    [RelayCommand]
+    private void OpenSpectrogram()
+    {
+        if (SelectedFile?.RawSpectrogram is { Length: > 0 })
+        {
+            _dialogService.ShowSpectrogram(
+                SelectedFile.RawSpectrogram,
+                SelectedFile.SpectroWidth,
+                SelectedFile.SpectroHeight,
+                SelectedFile.DurationSeconds,
+                SelectedFile.SampleRate,
+                SelectedFile.CutoffFrequency,
+                SelectedFile.FileName);
+        }
+    }
+
+    [RelayCommand]
+    private void OpenFolder()
+    {
+        if (SelectedFile?.FilePath is string path)
+            System.Diagnostics.Process.Start("explorer", $"/select,\"{path}\"");
     }
 
     public void OnTreeSelectionChanged(object? selectedItem)

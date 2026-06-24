@@ -1,7 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media.Imaging;
 using LosslessChecker.Models;
 using LosslessChecker.ViewModels;
 
@@ -34,13 +32,10 @@ public partial class MainWindow : Window
             grid.SelectedItem is AudioFileViewModel selected)
         {
             _viewModel.OnSelectionChanged(selected);
-            var bmp = selected.GetOrBuildSpectrogram();
-            SpectrogramImage.Source = bmp;
         }
         else
         {
             _viewModel.OnSelectionChanged(null);
-            SpectrogramImage.Source = null;
         }
     }
 
@@ -50,25 +45,9 @@ public partial class MainWindow : Window
         _viewModel.OnTreeSelectionChanged(e.NewValue);
     }
 
-    private void Spectrogram_Click(object sender, MouseButtonEventArgs e)
+    private void Spectrogram_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (_viewModel.SelectedFile == null) return;
-
-        var vm = _viewModel.SelectedFile;
-
-        if (vm.RawSpectrogram is { Length: > 0 })
-        {
-            var window = new SpectrogramWindow(
-                vm.RawSpectrogram,
-                vm.SpectroWidth,
-                vm.SpectroHeight,
-                vm.DurationSeconds,
-                vm.SampleRate,
-                vm.CutoffFrequency,
-                vm.FileName);
-            window.Owner = this;
-            window.Show();
-        }
+        _viewModel.OpenSpectrogramCommand.Execute(null);
     }
 
     private void Window_DragOver(object sender, System.Windows.DragEventArgs e)
@@ -84,21 +63,5 @@ public partial class MainWindow : Window
             var files = (string[])e.Data.GetData(System.Windows.DataFormats.FileDrop);
             await _viewModel.ScanAndAppend(files);
         }
-    }
-
-    private void OpenFolder_Click(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel.SelectedFile?.FilePath is string path)
-            System.Diagnostics.Process.Start("explorer", $"/select,\"{path}\"");
-    }
-
-    private void CopyMetrics_Click(object sender, RoutedEventArgs e)
-    {
-        _viewModel.SelectedFile?.CopyMetricsCommand.Execute(null);
-    }
-
-    private void SpectrogramContext_Click(object sender, RoutedEventArgs e)
-    {
-        Spectrogram_Click(sender, null!);
     }
 }

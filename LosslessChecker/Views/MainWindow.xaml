@@ -24,41 +24,14 @@
         <converters:NullToVisibilityConverter x:Key="NullToVisInverse" Invert="True"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
 
-        <!-- Metric header -->
         <Style x:Key="MetricHeaderStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{DynamicResource FgMutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
             <Setter Property="Margin" Value="0,12,0,4"/>
             <Setter Property="TextDecorations" Value="Underline"/>
         </Style>
 
-        <!-- Metric name -->
-        <Style x:Key="MetricNameStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Foreground" Value="{DynamicResource FgSecondaryBrush}"/>
-            <Setter Property="TextWrapping" Value="Wrap"/>
-        </Style>
-
-        <!-- Metric value -->
-        <Style x:Key="MetricValueStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="FontFamily" Value="Consolas"/>
-            <Setter Property="Foreground" Value="{DynamicResource FgPrimaryBrush}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="HorizontalAlignment" Value="Right"/>
-            <Setter Property="Margin" Value="8,0,0,0"/>
-        </Style>
-
-        <!-- Metric status badge -->
-        <Style x:Key="MetricStatusStyle" TargetType="Border">
-            <Setter Property="CornerRadius" Value="3"/>
-            <Setter Property="Padding" Value="6,2"/>
-            <Setter Property="Margin" Value="8,0,0,0"/>
-            <Setter Property="HorizontalAlignment" Value="Right"/>
-        </Style>
-
-        <!-- DataGrid column header -->
         <Style TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="{DynamicResource BgSecondaryBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource FgMutedBrush}"/>
@@ -69,7 +42,6 @@
             <Setter Property="FontSize" Value="11"/>
         </Style>
 
-        <!-- DataGrid cell -->
         <Style TargetType="DataGridCell">
             <Setter Property="BorderBrush" Value="Transparent"/>
             <Setter Property="Padding" Value="5,3"/>
@@ -77,12 +49,11 @@
             <Setter Property="FontSize" Value="12"/>
             <Style.Triggers>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Foreground" Value="#1e1e2e"/>
+                    <Setter Property="Foreground" Value="#0f0f1a"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
-        <!-- TreeView item style -->
         <Style TargetType="TreeViewItem">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{DynamicResource FgPrimaryBrush}"/>
@@ -97,7 +68,6 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Hierarchical templates for TreeView -->
         <HierarchicalDataTemplate DataType="{x:Type models:ArtistGroup}"
                                   ItemsSource="{Binding Albums}">
             <TextBlock Text="{Binding ArtistName}" FontWeight="SemiBold"
@@ -116,18 +86,18 @@
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding AlbumVerdict}" Value="LOSSLESS">
-                                    <Setter Property="Background" Value="#2EA043"/>
+                                    <Setter Property="Background" Value="{DynamicResource LosslessGreenBrush}"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding AlbumVerdict}" Value="NOT SURE">
-                                    <Setter Property="Background" Value="#D29922"/>
+                                    <Setter Property="Background" Value="{DynamicResource SuspiciousAmberBrush}"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding AlbumVerdict}" Value="REPLACE">
-                                    <Setter Property="Background" Value="#CF222E"/>
+                                    <Setter Property="Background" Value="{DynamicResource FakeRedBrush}"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Border.Style>
-                    <TextBlock Text="{Binding AlbumVerdict}" FontSize="9" Foreground="#1e1e2e" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding AlbumVerdict}" FontSize="9" Foreground="#0f0f1a" FontWeight="SemiBold"/>
                 </Border>
             </StackPanel>
         </HierarchicalDataTemplate>
@@ -137,9 +107,6 @@
                        Foreground="{DynamicResource FgSecondaryBrush}" Margin="16,0,0,0"
                        TextTrimming="CharacterEllipsis"/>
         </DataTemplate>
-
-        <!-- Cover placeholder brush -->
-        <SolidColorBrush x:Key="PlaceholderBrush" Color="#313244"/>
     </Window.Resources>
 
     <Grid>
@@ -152,7 +119,7 @@
             </Grid.RowDefinitions>
 
         <!-- Toolbar -->
-        <Border Grid.Row="0" CornerRadius="8" Background="{DynamicResource BgSecondaryBrush}" Padding="12" Margin="0,0,0,8">
+        <Border Grid.Row="0" Style="{StaticResource GlassCardStyle}" Padding="12" Margin="0,0,0,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -162,35 +129,21 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Button Grid.Column="0" Content="📁 Выбрать папку" Command="{Binding SelectFolderCommand}"
-                        Width="140" Height="34" Background="{DynamicResource AccentBrush}" Foreground="{DynamicResource BgPrimaryBrush}"
-                        BorderThickness="0" FontWeight="SemiBold" Cursor="Hand">
-                    <Button.Resources>
-                        <Style TargetType="Border"><Setter Property="CornerRadius" Value="6"/></Style>
-                    </Button.Resources>
-                </Button>
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Width="140" Height="34" Margin="0,0,8,0"/>
                 <Button Grid.Column="1" Content="⏹ Стоп" Command="{Binding StopCommand}"
-                        Width="80" Height="34" Background="#f38ba8" Foreground="{DynamicResource BgPrimaryBrush}"
-                        BorderThickness="0" FontWeight="SemiBold" Cursor="Hand" Margin="8,0,0,0">
-                    <Button.Resources>
-                        <Style TargetType="Border"><Setter Property="CornerRadius" Value="6"/></Style>
-                    </Button.Resources>
-                </Button>
+                        Style="{StaticResource DangerButtonStyle}"
+                        Width="80" Height="34" Margin="0,0,8,0"/>
                 <Button Grid.Column="2" Content="📁 Добавить" Command="{Binding AddFilesCommand}"
-                        Width="110" Height="34" Background="#a6e3a1" Foreground="#1e1e2e"
-                        BorderThickness="0" FontWeight="SemiBold" Cursor="Hand" Margin="8,0,0,0">
-                    <Button.Resources>
-                        <Style TargetType="Border"><Setter Property="CornerRadius" Value="6"/></Style>
-                    </Button.Resources>
-                </Button>
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="110" Height="34" Margin="0,0,8,0"/>
                 <Button Grid.Column="3" Content="📊 Экспорт" Command="{Binding ExportCommand}"
-                        Width="90" Height="34" Background="{DynamicResource BorderBrush}" Foreground="{DynamicResource FgPrimaryBrush}"
-                        BorderThickness="0" FontWeight="SemiBold" Cursor="Hand" Margin="8,0,0,0">
-                    <Button.Resources>
-                        <Style TargetType="Border"><Setter Property="CornerRadius" Value="6"/></Style>
-                    </Button.Resources>
-                </Button>
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="90" Height="34" Margin="0,0,8,0"/>
                 <ProgressBar Grid.Column="4" Value="{Binding Progress}" Minimum="0" Maximum="100"
-                             Height="8" Margin="20,0,0,0" Foreground="#a6e3a1" Background="{DynamicResource BorderBrush}"/>
+                             Height="8" Margin="20,0,0,0"
+                             Foreground="{DynamicResource ProgressGradientBrush}"
+                             Background="{DynamicResource BgTertiaryBrush}"/>
             </Grid>
         </Border>
 
@@ -204,14 +157,14 @@
                 <ColumnDefinition Width="380"/>
             </Grid.ColumnDefinitions>
 
-            <!-- TreeView: Artist → Album grouping -->
-            <Border Grid.Column="0" CornerRadius="8" Background="{DynamicResource BgTertiaryBrush}" Padding="0">
+            <!-- TreeView -->
+            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Padding="0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <Border Grid.Row="0" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="8,8,0,0"
+                    <Border Grid.Row="0" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="10,10,0,0"
                             Padding="10,6">
                         <TextBlock Text="🔍 Коллекция" FontSize="12" FontWeight="SemiBold"
                                    Foreground="{DynamicResource FgMutedBrush}"/>
@@ -238,7 +191,7 @@
             <GridSplitter Grid.Column="1" Width="3" Background="{DynamicResource BorderBrush}"
                           HorizontalAlignment="Center" VerticalAlignment="Stretch"/>
 
-            <!-- DataGrid: track list -->
+            <!-- DataGrid -->
             <Grid Grid.Column="2">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -261,28 +214,33 @@
                                    Background="{DynamicResource BgSecondaryBrush}" Foreground="#f9e2af" Margin="2,0" FontSize="10"/>
                 </StackPanel>
 
-                <DataGrid Grid.Row="1" x:Name="FilesGrid"
-                       ItemsSource="{Binding FilesView}" AutoGenerateColumns="False"
+                <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="0">
+                <DataGrid x:Name="FilesGrid"
+                      ItemsSource="{Binding FilesView}" AutoGenerateColumns="False"
                       IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
-                       Background="{DynamicResource BgPrimaryBrush}" Foreground="{DynamicResource FgPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                       Background="{DynamicResource BgPrimaryBrush}" Foreground="{DynamicResource FgPrimaryBrush}" BorderThickness="0"
                        RowBackground="{DynamicResource BgPrimaryBrush}" AlternatingRowBackground="{DynamicResource GridAltRowBrush}"
                        GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource BgSecondaryBrush}"
                       HeadersVisibility="Column" SelectionMode="Single"
-                      EnableRowVirtualization="True" ScrollViewer.CanContentScroll="True"
+                      EnableRowVirtualization="True" EnableColumnVirtualization="True"
+                      ScrollViewer.CanContentScroll="True"
                       CanUserSortColumns="True"
                       Sorting="DataGrid_Sorting"
                       SelectionChanged="DataGrid_SelectionChanged">
                 <DataGrid.Resources>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#89b4fa"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1e1e2e"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#45475a"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#cdd6f4"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#818cf8"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#0f0f1a"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#334155"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#e2e8f0"/>
                 </DataGrid.Resources>
                 <DataGrid.ContextMenu>
                     <ContextMenu>
-                        <MenuItem Header="📂 Открыть папку с файлом" Click="OpenFolder_Click"/>
-                        <MenuItem Header="📋 Копировать метрики" Click="CopyMetrics_Click"/>
-                        <MenuItem Header="🔬 Показать спектрограмму" Click="SpectrogramContext_Click"/>
+                        <MenuItem Header="📂 Открыть папку с файлом"
+                                  Command="{Binding OpenFolderCommand}"/>
+                        <MenuItem Header="📋 Копировать метрики"
+                                  Command="{Binding SelectedFile.CopyMetricsCommand}"/>
+                        <MenuItem Header="🔬 Показать спектрограмму"
+                                  Command="{Binding OpenSpectrogramCommand}"/>
                     </ContextMenu>
                 </DataGrid.ContextMenu>
                 <DataGrid.Columns>
@@ -347,6 +305,7 @@
                     </DataGridTextColumn>
                 </DataGrid.Columns>
                 </DataGrid>
+                </Border>
             </Grid>
 
             <GridSplitter Grid.Column="3" Width="3" Background="{DynamicResource BorderBrush}"
@@ -357,21 +316,13 @@
                           Visibility="{Binding IsSpectrumVisible, Converter={StaticResource BoolToVis}}">
                 <StackPanel Margin="8">
 
-                    <!-- Copy button -->
                     <Button Content="📋 Копировать таблицу"
                             Command="{Binding SelectedFile.CopyMetricsCommand}"
-                            Height="28" Margin="0,0,0,8"
-                            Background="{DynamicResource BorderBrush}" Foreground="{DynamicResource FgPrimaryBrush}"
-                            BorderThickness="0" FontSize="11"
-                            Cursor="Hand">
-                        <Button.Resources>
-                            <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
-                        </Button.Resources>
-                    </Button>
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Height="28" Margin="0,0,0,8"/>
 
-                    <!-- Cover art + Artist/Album/Genre -->
-                    <Border Background="#11111b" CornerRadius="6" Padding="0" Margin="0,0,0,8"
-                            Height="200">
+                    <!-- Cover art -->
+                    <Border Style="{StaticResource CardStyle}" Height="200" Margin="0,0,0,8">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -379,14 +330,11 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <!-- Cover image -->
-                            <Image Grid.Row="1" x:Name="CoverImage"
-                                   Stretch="Uniform" Margin="8"
+                            <Image Grid.Row="1" Stretch="Uniform" Margin="8"
                                    Source="{Binding SelectedFile.CoverData, Converter={StaticResource BytesToImage}}"
                                    Visibility="{Binding SelectedFile.CoverData, Converter={StaticResource NullToVis}}"/>
 
-                            <!-- Placeholder when no cover -->
-                            <Border x:Name="CoverPlaceholder" Grid.Row="1"
+                            <Border Grid.Row="1"
                                     Background="{DynamicResource BgSecondaryBrush}" CornerRadius="4" Margin="8"
                                     Visibility="{Binding SelectedFile.CoverData, Converter={StaticResource NullToVisInverse}}">
                                 <TextBlock Text="🎵" FontSize="48"
@@ -395,7 +343,6 @@
                                            Foreground="{DynamicResource FgSubtleBrush}"/>
                             </Border>
 
-                            <!-- Artist / Album / Genre info -->
                             <StackPanel Grid.Row="2" Margin="8,4,8,8">
                                 <TextBlock FontSize="12" FontWeight="SemiBold"
                                            Foreground="{DynamicResource FgPrimaryBrush}" TextTrimming="CharacterEllipsis"
@@ -410,7 +357,7 @@
                     </Border>
 
                     <!-- Spectrogram (clickable) -->
-                    <Border Background="#11111b" CornerRadius="6" Height="180" Margin="0,0,0,10"
+                    <Border Style="{StaticResource CardStyle}" Height="180" Margin="0,0,0,10"
                             Cursor="Hand" MouseLeftButtonDown="Spectrogram_Click">
                         <Grid>
                             <Grid.RowDefinitions>
@@ -420,9 +367,8 @@
                             <TextBlock Grid.Row="0" Text="{Binding SpectrumTitle}"
                                        Foreground="{DynamicResource FgMutedBrush}" FontSize="10"
                                        TextTrimming="CharacterEllipsis" Margin="6,4"/>
-                            <Image Grid.Row="1" x:Name="SpectrogramImage"
-                                   Stretch="Uniform" Margin="2"/>
-                            <!-- Click hint -->
+                            <Image Grid.Row="1" Stretch="Uniform" Margin="2"
+                                   Source="{Binding SelectedFile.SpectrogramBitmap}"/>
                             <TextBlock Grid.Row="1" Text="🔍 Click to enlarge"
                                        Foreground="{DynamicResource FgSubtleBrush}" FontSize="9"
                                        HorizontalAlignment="Right" VerticalAlignment="Bottom"
@@ -431,9 +377,9 @@
                     </Border>
 
                     <!-- Cutoff info bar -->
-                    <Border Background="{DynamicResource GridAltRowBrush}" CornerRadius="4" Padding="8,4" Margin="0,0,0,8">
+                    <Border Background="{DynamicResource GridAltRowBrush}" CornerRadius="6" Padding="8,4" Margin="0,0,0,8">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Foreground="#f38ba8" FontSize="11">
+                            <TextBlock Foreground="{DynamicResource FakeRedBrush}" FontSize="11">
                                 <Run Text="Срез: "/>
                                 <Run Text="{Binding SelectedCutoffFrequency, StringFormat={}{0:F0}}" FontWeight="Bold"/>
                                 <Run Text=" Гц"/>
@@ -447,8 +393,9 @@
                     </Border>
 
                     <!-- Verdict bar -->
-                    <Border CornerRadius="4" Padding="10,8" Margin="0,0,0,8"
-                            Background="{Binding SelectedFile.VerdictLabel, Converter={StaticResource DecToColor}}">
+                    <Border CornerRadius="8" Padding="10,8" Margin="0,0,0,8"
+                            Background="{Binding SelectedFile.VerdictLabel, Converter={StaticResource DecToColor}}"
+                            Effect="{StaticResource ShadowE1}">
                         <StackPanel>
                             <TextBlock FontSize="16" FontWeight="Bold" Margin="0,0,0,4"
                                        Foreground="{Binding SelectedFile.VerdictLabel, Converter={StaticResource DecToColor}}">
@@ -470,15 +417,13 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Grid>
-                                    <!-- Header row: visible when IsHeader=true -->
                                     <TextBlock Text="{Binding Name}"
                                                Visibility="{Binding IsHeader, Converter={StaticResource BoolToVis}}"
                                                Foreground="{DynamicResource AccentBrush}" FontSize="12" FontWeight="Bold"
                                                Margin="0,10,0,4" TextDecorations="Underline"/>
 
-                                    <!-- Metric row: visible when IsHeader=false -->
                                     <Border Visibility="{Binding IsHeader, Converter={StaticResource InvertBool}}"
-                                            Background="{DynamicResource BgPrimaryBrush}" CornerRadius="4" Padding="8,5" Margin="0,1">
+                                            Background="{DynamicResource BgSecondaryBrush}" CornerRadius="6" Padding="8,5" Margin="0,1">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -514,7 +459,7 @@
         </Grid>
 
         <!-- Summary bar -->
-        <Border Grid.Row="2" CornerRadius="8" Background="{DynamicResource BgSecondaryBrush}" Padding="12,8" Margin="0,6,0,0">
+        <Border Grid.Row="2" Style="{StaticResource GlassCardStyle}" Padding="12,8" Margin="0,6,0,0">
             <TextBlock Text="{Binding SummaryText}" Foreground="{DynamicResource FgMutedBrush}" FontSize="13"/>
         </Border>
         </Grid>
@@ -523,15 +468,15 @@
         <Border x:Name="WelcomeContent" Visibility="{Binding ShowWelcome, Converter={StaticResource BoolToVis}}"
                 Background="{DynamicResource BgPrimaryBrush}">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <TextBlock Text="🎵" FontSize="64" HorizontalAlignment="Center" Foreground="#585b70"/>
-                <TextBlock Text="Перетащите папку с аудио сюда" FontSize="18" Foreground="#a6adc8"
+                <TextBlock Text="🎵" FontSize="64" HorizontalAlignment="Center" Foreground="{DynamicResource FgSubtleBrush}"/>
+                <TextBlock Text="Перетащите папку с аудио сюда" FontSize="18" Foreground="{DynamicResource FgMutedBrush}"
                            HorizontalAlignment="Center" Margin="0,12"/>
-                <TextBlock Text="или нажмите Выбрать папку чтобы начать анализ" FontSize="12" Foreground="#585b70"
+                <TextBlock Text="или нажмите Выбрать папку чтобы начать анализ" FontSize="12" Foreground="{DynamicResource FgSubtleBrush}"
                            HorizontalAlignment="Center"/>
-                <Border BorderBrush="#45475a" BorderThickness="2" CornerRadius="12"
+                <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="2" CornerRadius="12"
                         Margin="40,20" Padding="20">
                     <TextBlock Text=".mp3  .flac  .wav  .m4a  .alac"
-                               Foreground="#585b70" FontSize="11" HorizontalAlignment="Center"/>
+                               Foreground="{DynamicResource FgSubtleBrush}" FontSize="11" HorizontalAlignment="Center"/>
                 </Border>
             </StackPanel>
         </Border>

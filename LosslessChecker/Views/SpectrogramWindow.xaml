@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Spectrogram" Height="650" Width="1000"
         WindowStartupLocation="CenterOwner"
-        Background="#11111b" Foreground="#cdd6f4"
+        Background="{DynamicResource BgPrimaryBrush}" Foreground="{DynamicResource FgPrimaryBrush}"
         ResizeMode="CanResizeWithGrip"
         MouseWheel="Window_MouseWheel"
         MouseLeftButtonDown="Window_MouseLeftButtonDown"
@@ -18,11 +18,11 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <ToolBar Grid.Row="0" Background="#313244">
-            <Button Content="📋 Copy PNG" Click="CopyPng_Click" Background="#45475a"
-                    Foreground="#cdd6f4" BorderThickness="0" Margin="4" Cursor="Hand"/>
-            <Button Content="↺ Reset" Click="ResetZoom_Click" Background="#45475a"
-                    Foreground="#cdd6f4" BorderThickness="0" Margin="4" Cursor="Hand"/>
+        <ToolBar Grid.Row="0" Background="{DynamicResource BgSecondaryBrush}">
+            <Button Content="📋 Copy PNG" Click="CopyPng_Click"
+                    Foreground="{DynamicResource FgPrimaryBrush}" BorderThickness="0" Margin="4" Cursor="Hand"/>
+            <Button Content="↺ Reset" Click="ResetZoom_Click"
+                    Foreground="{DynamicResource FgPrimaryBrush}" BorderThickness="0" Margin="4" Cursor="Hand"/>
         </ToolBar>
 
         <Grid Grid.Row="1" Margin="50,10,50,30">
@@ -31,12 +31,12 @@
             <Canvas x:Name="OverlayCanvas" IsHitTestVisible="False"/>
         </Grid>
 
-        <StatusBar Grid.Row="2" Background="#1e1e2e">
-            <TextBlock x:Name="StatusText" Foreground="#a6adc8" FontSize="11"/>
+        <StatusBar Grid.Row="2" Background="{DynamicResource BgPrimaryBrush}">
+            <TextBlock x:Name="StatusText" Foreground="{DynamicResource FgMutedBrush}" FontSize="11"/>
         </StatusBar>
         
         <TextBlock Grid.Row="3" Text="{Binding Title}"
-                   Foreground="#a6adc8" FontSize="11"
+                   Foreground="{DynamicResource FgMutedBrush}" FontSize="11"
                    HorizontalAlignment="Center" Margin="0,2,0,6"/>
     </Grid>
 </Window>
