@@ -2,6 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:converters="clr-namespace:LosslessChecker.Converters"
+        xmlns:models="clr-namespace:LosslessChecker.Models"
+        xmlns:viewmodels="clr-namespace:LosslessChecker.ViewModels"
         Title="LosslessChecker — Анализ аутентичности аудио"
         Height="900" Width="1400"
         WindowStartupLocation="CenterScreen"
@@ -15,9 +17,13 @@
         <converters:DecisionToColorConverter x:Key="DecToColor"/>
         <converters:ScoreToIconConverter x:Key="IconConverter"/>
         <converters:InvertBoolConverter x:Key="InvertBool"/>
+        <converters:DurationFormatConverter x:Key="DurationFormat"/>
+        <converters:BytesToImageConverter x:Key="BytesToImage"/>
+        <converters:NullToVisibilityConverter x:Key="NullToVis"/>
+        <converters:NullToVisibilityConverter x:Key="NullToVisInverse" Invert="True"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
 
-        <!-- Style for metric header rows -->
+        <!-- Metric header -->
         <Style x:Key="MetricHeaderStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -26,14 +32,14 @@
             <Setter Property="TextDecorations" Value="Underline"/>
         </Style>
 
-        <!-- Style for metric name -->
+        <!-- Metric name -->
         <Style x:Key="MetricNameStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Foreground" Value="#bac2de"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
 
-        <!-- Style for metric value -->
+        <!-- Metric value -->
         <Style x:Key="MetricValueStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="FontFamily" Value="Consolas"/>
@@ -43,7 +49,7 @@
             <Setter Property="Margin" Value="8,0,0,0"/>
         </Style>
 
-        <!-- Style for metric status badge -->
+        <!-- Metric status badge -->
         <Style x:Key="MetricStatusStyle" TargetType="Border">
             <Setter Property="CornerRadius" Value="3"/>
             <Setter Property="Padding" Value="6,2"/>
@@ -51,22 +57,60 @@
             <Setter Property="HorizontalAlignment" Value="Right"/>
         </Style>
 
-        <!-- DataGrid cell styles -->
+        <!-- DataGrid column header -->
         <Style TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="#313244"/>
             <Setter Property="Foreground" Value="#a6adc8"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="BorderBrush" Value="#45475a"/>
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
-            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Padding" Value="6,5"/>
             <Setter Property="FontSize" Value="11"/>
         </Style>
+
+        <!-- DataGrid cell -->
         <Style TargetType="DataGridCell">
             <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Padding" Value="5,3"/>
             <Setter Property="Foreground" Value="#cdd6f4"/>
             <Setter Property="FontSize" Value="12"/>
         </Style>
+
+        <!-- TreeView item style -->
+        <Style TargetType="TreeViewItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#cdd6f4"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="2,3"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#89b4fa"/>
+                    <Setter Property="Foreground" Value="#1e1e2e"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Hierarchical templates for TreeView -->
+        <HierarchicalDataTemplate DataType="{x:Type models:ArtistGroup}"
+                                  ItemsSource="{Binding Albums}">
+            <TextBlock Text="{Binding ArtistName}" FontWeight="SemiBold"
+                       FontSize="12.5" Margin="0,1"/>
+        </HierarchicalDataTemplate>
+
+        <HierarchicalDataTemplate DataType="{x:Type models:AlbumGroup}"
+                                  ItemsSource="{Binding Tracks}">
+            <TextBlock Text="{Binding AlbumName}" FontSize="12" Margin="8,0,0,0"/>
+        </HierarchicalDataTemplate>
+
+        <DataTemplate DataType="{x:Type viewmodels:AudioFileViewModel}">
+            <TextBlock Text="{Binding FileName}" FontSize="11"
+                       Foreground="#bac2de" Margin="16,0,0,0"
+                       TextTrimming="CharacterEllipsis"/>
+        </DataTemplate>
+
+        <!-- Cover placeholder brush -->
+        <SolidColorBrush x:Key="PlaceholderBrush" Color="#313244"/>
     </Window.Resources>
 
     <Grid Margin="10">
@@ -103,17 +147,53 @@
             </Grid>
         </Border>
 
-        <!-- Master-Detail split -->
+        <!-- Main three-panel layout -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="460"/>
+                <ColumnDefinition Width="380"/>
             </Grid.ColumnDefinitions>
 
-            <!-- DataGrid (left) -->
-            <DataGrid Grid.Column="0" x:Name="FilesGrid"
-                      ItemsSource="{Binding Files}" AutoGenerateColumns="False"
+            <!-- TreeView: Artist → Album grouping -->
+            <Border Grid.Column="0" CornerRadius="8" Background="#181825" Padding="0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Border Grid.Row="0" Background="#313244" CornerRadius="8,8,0,0"
+                            Padding="10,6">
+                        <TextBlock Text="🔍 Коллекция" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="#a6adc8"/>
+                    </Border>
+                    <TreeView Grid.Row="1" x:Name="GroupTreeView"
+                              ItemsSource="{Binding ArtistGroups}"
+                              Background="#181825" Foreground="#cdd6f4"
+                              BorderThickness="0" Padding="4,6"
+                              SelectedItemChanged="TreeView_SelectedItemChanged">
+                        <TreeView.Resources>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"
+                                             Color="#89b4fa"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}"
+                                             Color="#1e1e2e"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
+                                             Color="#89b4fa"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}"
+                                             Color="#1e1e2e"/>
+                        </TreeView.Resources>
+                    </TreeView>
+                </Grid>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="3" Background="#45475a"
+                          HorizontalAlignment="Center" VerticalAlignment="Stretch"/>
+
+            <!-- DataGrid: track list -->
+            <DataGrid Grid.Column="2" x:Name="FilesGrid"
+                      ItemsSource="{Binding FilteredFiles}" AutoGenerateColumns="False"
                       IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
                       Background="#1e1e2e" Foreground="#cdd6f4" BorderBrush="#45475a"
                       RowBackground="#1e1e2e" AlternatingRowBackground="#242438"
@@ -130,17 +210,26 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="Название" Binding="{Binding FileName}" Width="160">
+                    <DataGridTextColumn Header="Название" Binding="{Binding FileName}" Width="180">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="Формат" Binding="{Binding Format}" Width="100"/>
-                    <DataGridTextColumn Header="Cutoff" Binding="{Binding CutoffFrequency, StringFormat={}{0:F0} Гц}" Width="70"/>
-                    <DataGridTextColumn Header="DR" Binding="{Binding DynamicRange, StringFormat={}{0:F0}}" Width="45"/>
-                    <DataGridTextColumn Header="Аутентичность" Binding="{Binding Authenticity}" Width="105">
+                    <DataGridTemplateColumn Header="Длит." Width="55">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DurationSeconds, Converter={StaticResource DurationFormat}}"
+                                           HorizontalAlignment="Right" FontFamily="Consolas" FontSize="11"
+                                           Foreground="#a6adc8"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="Формат" Binding="{Binding Format}" Width="60"/>
+                    <DataGridTextColumn Header="Cutoff" Binding="{Binding CutoffFrequency, StringFormat={}{0:F0} Гц}" Width="60"/>
+                    <DataGridTextColumn Header="DR" Binding="{Binding DynamicRange, StringFormat={}{0:F0}}" Width="40"/>
+                    <DataGridTextColumn Header="Аутентичность" Binding="{Binding Authenticity}" Width="100">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Foreground" Value="{Binding Authenticity, Converter={StaticResource AuthToColor}}"/>
@@ -167,161 +256,205 @@
                 </DataGrid.Columns>
             </DataGrid>
 
-            <GridSplitter Grid.Column="1" Width="4" Background="#45475a"
+            <GridSplitter Grid.Column="3" Width="3" Background="#45475a"
                           HorizontalAlignment="Center" VerticalAlignment="Stretch"/>
 
-            <!-- Detail Panel (right) -->
-            <Border Grid.Column="2" CornerRadius="8" Background="#181825" Padding="0"
-                    Visibility="{Binding IsSpectrumVisible, Converter={StaticResource BoolToVis}}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="10">
+            <!-- Detail Panel -->
+            <ScrollViewer Grid.Column="4" VerticalScrollBarVisibility="Auto"
+                          Visibility="{Binding IsSpectrumVisible, Converter={StaticResource BoolToVis}}">
+                <StackPanel Margin="8">
 
-                        <!-- Copy button -->
-                        <Button Content="📋 Копировать таблицу"
-                                Command="{Binding SelectedFile.CopyMetricsCommand}"
-                                Height="28" Margin="0,0,0,8"
-                                Background="#45475a" Foreground="#cdd6f4"
-                                BorderThickness="0" FontSize="11"
-                                Cursor="Hand">
-                            <Button.Resources>
-                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
-                            </Button.Resources>
-                        </Button>
+                    <!-- Copy button -->
+                    <Button Content="📋 Копировать таблицу"
+                            Command="{Binding SelectedFile.CopyMetricsCommand}"
+                            Height="28" Margin="0,0,0,8"
+                            Background="#45475a" Foreground="#cdd6f4"
+                            BorderThickness="0" FontSize="11"
+                            Cursor="Hand">
+                        <Button.Resources>
+                            <Style TargetType="Border"><Setter Property="CornerRadius" Value="4"/></Style>
+                        </Button.Resources>
+                    </Button>
 
-                        <!-- Spectrogram -->
-                        <Border Background="#11111b" CornerRadius="6" Height="160" Margin="0,0,0,10">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="*"/>
-                                </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Text="{Binding SpectrumTitle}"
-                                           Foreground="#a6adc8" FontSize="10"
-                                           TextTrimming="CharacterEllipsis" Margin="6,4"/>
-                                <Image Grid.Row="1" x:Name="SpectrogramImage"
-                                       Stretch="Uniform" Margin="2"/>
-                            </Grid>
-                        </Border>
+                    <!-- Cover art + Artist/Album/Genre -->
+                    <Border Background="#11111b" CornerRadius="6" Padding="0" Margin="0,0,0,8"
+                            Height="200">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
 
-                        <!-- Cutoff info bar -->
-                        <Border Background="#242438" CornerRadius="4" Padding="8,4" Margin="0,0,0,8">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Foreground="#f38ba8" FontSize="11">
-                                    <Run Text="Срез: "/>
-                                    <Run Text="{Binding SelectedCutoffFrequency, StringFormat={}{0:F0}}" FontWeight="Bold"/>
-                                    <Run Text=" Гц"/>
-                                </TextBlock>
-                                <TextBlock Foreground="#585b70" FontSize="11" Margin="12,0,0,0">
-                                    <Run Text="Nyquist: "/>
-                                    <Run Text="{Binding SelectedNyquist, StringFormat={}{0:F0}}" FontWeight="Bold"/>
-                                    <Run Text=" Гц"/>
-                                </TextBlock>
+                            <!-- Cover image -->
+                            <Image Grid.Row="1" x:Name="CoverImage"
+                                   Stretch="Uniform" Margin="8"
+                                   Source="{Binding SelectedGroup.CoverData, Converter={StaticResource BytesToImage}}"
+                                   Visibility="{Binding SelectedGroup.CoverData, Converter={StaticResource NullToVis}}"/>
+
+                            <!-- Placeholder when no cover -->
+                            <Border x:Name="CoverPlaceholder" Grid.Row="1"
+                                    Background="#313244" CornerRadius="4" Margin="8"
+                                    Visibility="{Binding SelectedGroup.CoverData, Converter={StaticResource NullToVisInverse}}">
+                                <TextBlock Text="🎵" FontSize="48"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="#585b70"/>
+                            </Border>
+
+                            <!-- Artist / Album / Genre info -->
+                            <StackPanel Grid.Row="2" Margin="8,4,8,8">
+                                <TextBlock FontSize="12" FontWeight="SemiBold"
+                                           Foreground="#cdd6f4" TextTrimming="CharacterEllipsis"
+                                           Text="{Binding SelectedFile.Artist, FallbackValue=''}"/>
+                                <TextBlock FontSize="11" Foreground="#bac2de"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="{Binding SelectedFile.Album, FallbackValue=''}"/>
+                                <TextBlock FontSize="10" Foreground="#a6adc8"
+                                           Text="{Binding SelectedGroup.Genre, FallbackValue=''}"/>
                             </StackPanel>
-                        </Border>
+                        </Grid>
+                    </Border>
 
-                        <!-- Verdict bar -->
-                        <Border CornerRadius="4" Padding="10,8" Margin="0,0,0,8">
-                            <Border.Style>
-                                <Style TargetType="Border">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP">
-                                            <Setter Property="Background" Value="#1a3022"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP (poor master)">
-                                            <Setter Property="Background" Value="#2e2a1a"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="INVESTIGATE">
-                                            <Setter Property="Background" Value="#2e2a1a"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="REPLACE">
-                                            <Setter Property="Background" Value="#301a1a"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Border.Style>
-                            <StackPanel>
-                                <TextBlock FontSize="16" FontWeight="Bold" Margin="0,0,0,4">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP">
-                                                    <Setter Property="Text" Value="✅ ОСТАВИТЬ"/>
-                                                    <Setter Property="Foreground" Value="#2EA043"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP (poor master)">
-                                                    <Setter Property="Text" Value="⚠ ОСТАВИТЬ (плохой мастеринг)"/>
-                                                    <Setter Property="Foreground" Value="#D29922"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="INVESTIGATE">
-                                                    <Setter Property="Text" Value="🔍 ПРОВЕРИТЬ"/>
-                                                    <Setter Property="Foreground" Value="#D29922"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="REPLACE">
-                                                    <Setter Property="Text" Value="❌ ЗАМЕНИТЬ"/>
-                                                    <Setter Property="Foreground" Value="#CF222E"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                                <TextBlock FontSize="11" Foreground="#a6adc8">
-                                    <Run Text="Аутентичность: "/>
-                                    <Run Text="{Binding SelectedFile.Authenticity}" FontWeight="Bold"
-                                         Foreground="{Binding SelectedFile.Authenticity, Converter={StaticResource AuthToColor}}"/>
-                                    <Run Text=" | Качество: "/>
-                                    <Run Text="{Binding SelectedFile.QualityScore, StringFormat={}{0}/10}" FontWeight="Bold"
-                                         Foreground="{Binding SelectedFile.QualityScore, Converter={StaticResource ScoreToColor}}"/>
-                                </TextBlock>
-                            </StackPanel>
-                        </Border>
+                    <!-- Spectrogram (clickable) -->
+                    <Border Background="#11111b" CornerRadius="6" Height="180" Margin="0,0,0,10"
+                            Cursor="Hand" MouseLeftButtonDown="Spectrogram_Click">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="{Binding SpectrumTitle}"
+                                       Foreground="#a6adc8" FontSize="10"
+                                       TextTrimming="CharacterEllipsis" Margin="6,4"/>
+                            <Image Grid.Row="1" x:Name="SpectrogramImage"
+                                   Stretch="Uniform" Margin="2"/>
+                            <!-- Click hint -->
+                            <TextBlock Grid.Row="1" Text="🔍 Click to enlarge"
+                                       Foreground="#585b70" FontSize="9"
+                                       HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                       Margin="0,0,6,4"/>
+                        </Grid>
+                    </Border>
 
-                        <!-- Metrics table -->
-                        <ItemsControl ItemsSource="{Binding SelectedFile.MetricItems}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid>
-                                        <!-- Header row: visible when IsHeader=true -->
-                                        <TextBlock Text="{Binding Name}"
-                                                   Visibility="{Binding IsHeader, Converter={StaticResource BoolToVis}}"
-                                                   Foreground="#89b4fa" FontSize="12" FontWeight="Bold"
-                                                   Margin="0,10,0,4" TextDecorations="Underline"/>
+                    <!-- Cutoff info bar -->
+                    <Border Background="#242438" CornerRadius="4" Padding="8,4" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Foreground="#f38ba8" FontSize="11">
+                                <Run Text="Срез: "/>
+                                <Run Text="{Binding SelectedCutoffFrequency, StringFormat={}{0:F0}}" FontWeight="Bold"/>
+                                <Run Text=" Гц"/>
+                            </TextBlock>
+                            <TextBlock Foreground="#585b70" FontSize="11" Margin="12,0,0,0">
+                                <Run Text="Nyquist: "/>
+                                <Run Text="{Binding SelectedNyquist, StringFormat={}{0:F0}}" FontWeight="Bold"/>
+                                <Run Text=" Гц"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
 
-                                        <!-- Metric row: visible when IsHeader=false -->
-                                        <Border Visibility="{Binding IsHeader, Converter={StaticResource InvertBool}}"
-                                                Background="#1e1e2e" CornerRadius="4" Padding="8,5" Margin="0,1">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel Grid.Column="0">
-                                                    <TextBlock Text="{Binding Name}" FontSize="10.5"
-                                                               Foreground="#bac2de" ToolTip="{Binding Description}"/>
-                                                    <TextBlock Text="{Binding Typical}" FontSize="9"
-                                                               Foreground="#585b70" FontStyle="Italic"
-                                                               Margin="0,2,0,0" ToolTip="{Binding Description}"/>
-                                                </StackPanel>
-                                                <StackPanel Grid.Column="1" Orientation="Horizontal"
-                                                            VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding Value}" FontSize="10.5"
-                                                               FontFamily="Consolas" Foreground="#cdd6f4"
-                                                               FontWeight="SemiBold" Margin="0,0,10,0"/>
-                                                    <Border CornerRadius="3" Padding="6,2"
-                                                            Background="{Binding StatusColor}">
-                                                        <TextBlock Text="{Binding Status}" FontSize="9.5"
-                                                                   Foreground="#1e1e2e" FontWeight="SemiBold"/>
-                                                    </Border>
-                                                </StackPanel>
-                                            </Grid>
-                                        </Border>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                    <!-- Verdict bar -->
+                    <Border CornerRadius="4" Padding="10,8" Margin="0,0,0,8">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP">
+                                        <Setter Property="Background" Value="#1a3022"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP (poor master)">
+                                        <Setter Property="Background" Value="#2e2a1a"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="INVESTIGATE">
+                                        <Setter Property="Background" Value="#2e2a1a"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="REPLACE">
+                                        <Setter Property="Background" Value="#301a1a"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <TextBlock FontSize="16" FontWeight="Bold" Margin="0,0,0,4">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP">
+                                                <Setter Property="Text" Value="✅ ОСТАВИТЬ"/>
+                                                <Setter Property="Foreground" Value="#2EA043"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="KEEP (poor master)">
+                                                <Setter Property="Text" Value="⚠ ОСТАВИТЬ (плохой мастеринг)"/>
+                                                <Setter Property="Foreground" Value="#D29922"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="INVESTIGATE">
+                                                <Setter Property="Text" Value="🔍 ПРОВЕРИТЬ"/>
+                                                <Setter Property="Foreground" Value="#D29922"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding SelectedFile.Decision}" Value="REPLACE">
+                                                <Setter Property="Text" Value="❌ ЗАМЕНИТЬ"/>
+                                                <Setter Property="Foreground" Value="#CF222E"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock FontSize="11" Foreground="#a6adc8">
+                                <Run Text="Аутентичность: "/>
+                                <Run Text="{Binding SelectedFile.Authenticity}" FontWeight="Bold"
+                                     Foreground="{Binding SelectedFile.Authenticity, Converter={StaticResource AuthToColor}}"/>
+                                <Run Text=" | Качество: "/>
+                                <Run Text="{Binding SelectedFile.QualityScore, StringFormat={}{0}/10}" FontWeight="Bold"
+                                     Foreground="{Binding SelectedFile.QualityScore, Converter={StaticResource ScoreToColor}}"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
 
-                    </StackPanel>
-                </ScrollViewer>
-            </Border>
+                    <!-- Metrics table -->
+                    <ItemsControl ItemsSource="{Binding SelectedFile.MetricItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <!-- Header row: visible when IsHeader=true -->
+                                    <TextBlock Text="{Binding Name}"
+                                               Visibility="{Binding IsHeader, Converter={StaticResource BoolToVis}}"
+                                               Foreground="#89b4fa" FontSize="12" FontWeight="Bold"
+                                               Margin="0,10,0,4" TextDecorations="Underline"/>
+
+                                    <!-- Metric row: visible when IsHeader=false -->
+                                    <Border Visibility="{Binding IsHeader, Converter={StaticResource InvertBool}}"
+                                            Background="#1e1e2e" CornerRadius="4" Padding="8,5" Margin="0,1">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="{Binding Name}" FontSize="10.5"
+                                                           Foreground="#bac2de" ToolTip="{Binding Description}"/>
+                                                <TextBlock Text="{Binding Typical}" FontSize="9"
+                                                           Foreground="#585b70" FontStyle="Italic"
+                                                           Margin="0,2,0,0" ToolTip="{Binding Description}"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Value}" FontSize="10.5"
+                                                           FontFamily="Consolas" Foreground="#cdd6f4"
+                                                           FontWeight="SemiBold" Margin="0,0,10,0"/>
+                                                <Border CornerRadius="3" Padding="6,2"
+                                                        Background="{Binding StatusColor}">
+                                                    <TextBlock Text="{Binding Status}" FontSize="9.5"
+                                                               Foreground="#1e1e2e" FontWeight="SemiBold"/>
+                                                </Border>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
 
         <!-- Summary bar -->

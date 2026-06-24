@@ -19,6 +19,15 @@ public partial class MainViewModel : ObservableObject
     private ObservableCollection<AudioFileViewModel> _files = new();
 
     [ObservableProperty]
+    private ObservableCollection<AudioFileViewModel> _filteredFiles = new();
+
+    [ObservableProperty]
+    private ObservableCollection<ArtistGroup> _artistGroups = new();
+
+    [ObservableProperty]
+    private AlbumGroup? _selectedGroup;
+
+    [ObservableProperty]
     private bool _isProcessing;
 
     [ObservableProperty]
@@ -78,6 +87,31 @@ public partial class MainViewModel : ObservableObject
         IsSpectrumVisible = true;
     }
 
+    public void OnTreeSelectionChanged(object? selectedItem)
+    {
+        switch (selectedItem)
+        {
+            case ArtistGroup artist:
+                SelectedGroup = null;
+                FilteredFiles = new ObservableCollection<AudioFileViewModel>(
+                    artist.Albums.SelectMany(a => a.Tracks));
+                break;
+            case AlbumGroup album:
+                SelectedGroup = album;
+                FilteredFiles = album.Tracks;
+                break;
+            case AudioFileViewModel track:
+                SelectedGroup = null;
+                FilteredFiles = new ObservableCollection<AudioFileViewModel> { track };
+                SelectedFile = track;
+                break;
+            default:
+                SelectedGroup = null;
+                FilteredFiles = Files;
+                break;
+        }
+    }
+
     [RelayCommand]
     private async Task SelectFolder()
     {
@@ -108,6 +142,9 @@ public partial class MainViewModel : ObservableObject
         InvestigateCount = 0;
         ReplaceCount = 0;
         Files.Clear();
+        ArtistGroups.Clear();
+        FilteredFiles.Clear();
+        SelectedGroup = null;
 
         _cts = new CancellationTokenSource();
         var ct = _cts.Token;
@@ -162,6 +199,9 @@ public partial class MainViewModel : ObservableObject
             });
 
             await Task.WhenAll(tasks);
+
+            PopulateArtistGroups();
+            FilteredFiles = new ObservableCollection<AudioFileViewModel>(Files);
         }
         catch (OperationCanceledException) { }
         finally
@@ -169,6 +209,38 @@ public partial class MainViewModel : ObservableObject
             IsProcessing = false;
             UpdateSummary();
         }
+    }
+
+    private void PopulateArtistGroups()
+    {
+        var groups = Files
+            .Where(f => f.AnalysisStatus != AnalysisStatus.Error)
+            .GroupBy(f => string.IsNullOrWhiteSpace(f.Artist) ? "Unknown Artist" : f.Artist)
+            .OrderBy(g => g.Key)
+            .Select(artistGroup =>
+            {
+                var artist = new ArtistGroup { ArtistName = artistGroup.Key };
+                var albums = artistGroup
+                    .GroupBy(f => string.IsNullOrWhiteSpace(f.Album) ? "Unknown Album" : f.Album)
+                    .OrderBy(g => g.Key)
+                    .Select(albumGroup =>
+                    {
+                        var first = albumGroup.First();
+                        return new AlbumGroup
+                        {
+                            AlbumName = albumGroup.Key,
+                            Genre = first.Genre,
+                            CoverData = first.CoverData,
+                            Tracks = new ObservableCollection<AudioFileViewModel>(
+                                albumGroup.OrderBy(f => f.FileName))
+                        };
+                    });
+                foreach (var album in albums)
+                    artist.Albums.Add(album);
+                return artist;
+            });
+
+        ArtistGroups = new ObservableCollection<ArtistGroup>(groups);
     }
 
     private void UpdateSummary()
