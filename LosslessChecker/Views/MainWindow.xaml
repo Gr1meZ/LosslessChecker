@@ -101,7 +101,30 @@
 
         <HierarchicalDataTemplate DataType="{x:Type models:AlbumGroup}"
                                   ItemsSource="{Binding Tracks}">
-            <TextBlock Text="{Binding AlbumName}" FontSize="12" Margin="8,0,0,0"/>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding AlbumName}" FontSize="12" Margin="8,0,4,0" VerticalAlignment="Center"/>
+                <Border CornerRadius="3" Padding="4,1" Margin="4,0,0,0" VerticalAlignment="Center">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding AlbumVerdict}" Value="">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding AlbumVerdict}" Value="LOSSLESS">
+                                    <Setter Property="Background" Value="#2EA043"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding AlbumVerdict}" Value="NOT SURE">
+                                    <Setter Property="Background" Value="#D29922"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding AlbumVerdict}" Value="REPLACE">
+                                    <Setter Property="Background" Value="#CF222E"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding AlbumVerdict}" FontSize="9" Foreground="#1e1e2e" FontWeight="SemiBold"/>
+                </Border>
+            </StackPanel>
         </HierarchicalDataTemplate>
 
         <DataTemplate DataType="{x:Type viewmodels:AudioFileViewModel}">
@@ -130,6 +153,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Button Grid.Column="0" Content="📁 Выбрать папку" Command="{Binding SelectFolderCommand}"
@@ -146,14 +170,21 @@
                         <Style TargetType="Border"><Setter Property="CornerRadius" Value="6"/></Style>
                     </Button.Resources>
                 </Button>
-                <Button Grid.Column="2" Content="📊 Экспорт" Command="{Binding ExportCommand}"
+                <Button Grid.Column="2" Content="📁 Добавить" Command="{Binding AddFilesCommand}"
+                        Width="110" Height="34" Background="#a6e3a1" Foreground="#1e1e2e"
+                        BorderThickness="0" FontWeight="SemiBold" Cursor="Hand" Margin="8,0,0,0">
+                    <Button.Resources>
+                        <Style TargetType="Border"><Setter Property="CornerRadius" Value="6"/></Style>
+                    </Button.Resources>
+                </Button>
+                <Button Grid.Column="3" Content="📊 Экспорт" Command="{Binding ExportCommand}"
                         Width="90" Height="34" Background="{DynamicResource BorderBrush}" Foreground="{DynamicResource FgPrimaryBrush}"
                         BorderThickness="0" FontWeight="SemiBold" Cursor="Hand" Margin="8,0,0,0">
                     <Button.Resources>
                         <Style TargetType="Border"><Setter Property="CornerRadius" Value="6"/></Style>
                     </Button.Resources>
                 </Button>
-                <ProgressBar Grid.Column="3" Value="{Binding Progress}" Minimum="0" Maximum="100"
+                <ProgressBar Grid.Column="4" Value="{Binding Progress}" Minimum="0" Maximum="100"
                              Height="8" Margin="20,0,0,0" Foreground="#a6e3a1" Background="{DynamicResource BorderBrush}"/>
             </Grid>
         </Border>
@@ -340,13 +371,13 @@
                             <!-- Cover image -->
                             <Image Grid.Row="1" x:Name="CoverImage"
                                    Stretch="Uniform" Margin="8"
-                                   Source="{Binding SelectedGroup.CoverData, Converter={StaticResource BytesToImage}}"
-                                   Visibility="{Binding SelectedGroup.CoverData, Converter={StaticResource NullToVis}}"/>
+                                   Source="{Binding SelectedFile.CoverData, Converter={StaticResource BytesToImage}}"
+                                   Visibility="{Binding SelectedFile.CoverData, Converter={StaticResource NullToVis}}"/>
 
                             <!-- Placeholder when no cover -->
                             <Border x:Name="CoverPlaceholder" Grid.Row="1"
                                     Background="{DynamicResource BgSecondaryBrush}" CornerRadius="4" Margin="8"
-                                    Visibility="{Binding SelectedGroup.CoverData, Converter={StaticResource NullToVisInverse}}">
+                                    Visibility="{Binding SelectedFile.CoverData, Converter={StaticResource NullToVisInverse}}">
                                 <TextBlock Text="🎵" FontSize="48"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center"
