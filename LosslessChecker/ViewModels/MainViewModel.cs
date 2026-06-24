@@ -33,7 +33,7 @@ public partial class MainViewModel : ObservableObject
     private bool _isProcessing;
 
     [ObservableProperty]
-    private bool _isEmpty = true;
+    private bool _showWelcome = true;
 
     [ObservableProperty]
     private string _searchQuery = "";
@@ -209,6 +209,7 @@ public partial class MainViewModel : ObservableObject
             folderPath = dialog.SelectedPath;
         }
 
+        ShowWelcome = false;
         await ScanAndAnalyze(folderPath);
     }
 
@@ -279,7 +280,7 @@ public partial class MainViewModel : ObservableObject
     private async Task ScanAndAnalyze(string folderPath)
     {
         IsProcessing = true;
-        IsEmpty = true;
+        ShowWelcome = false;
         ProcessedFiles = 0;
         ErrorCount = 0;
         KeepCount = 0;
@@ -348,14 +349,14 @@ public partial class MainViewModel : ObservableObject
             PopulateArtistGroups();
             _baseFiles = Files;
             ApplyFilters();
-            IsEmpty = Files.Count == 0;
+            ShowWelcome = Files.Count == 0;
         }
         catch (OperationCanceledException) { }
         finally
         {
             IsProcessing = false;
             UpdateSummary();
-            IsEmpty = Files.Count == 0;
+            ShowWelcome = Files.Count == 0;
         }
     }
 

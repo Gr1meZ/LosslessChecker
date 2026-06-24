@@ -115,6 +115,7 @@
     </Window.Resources>
 
     <Grid>
+        <Border x:Name="MainContent" Visibility="{Binding ShowWelcome, Converter={StaticResource InvertBool}}">
         <Grid Margin="10">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -511,22 +512,23 @@
         <Border Grid.Row="2" CornerRadius="8" Background="{DynamicResource BgSecondaryBrush}" Padding="12,8" Margin="0,6,0,0">
             <TextBlock Text="{Binding SummaryText}" Foreground="{DynamicResource FgMutedBrush}" FontSize="13"/>
         </Border>
-    </Grid>
+        </Grid>
+        </Border>
 
-    <Grid x:Name="WelcomeOverlay" Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}"
-          Background="{DynamicResource BgPrimaryBrush}">
-        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-            <TextBlock Text="🎵" FontSize="64" HorizontalAlignment="Center" Foreground="{DynamicResource FgSubtleBrush}"/>
-            <TextBlock Text="Перетащите папку с аудио сюда" FontSize="18" Foreground="{DynamicResource FgMutedBrush}"
-                       HorizontalAlignment="Center" Margin="0,12"/>
-            <TextBlock Text="или нажмите Выбрать папку чтобы начать анализ" FontSize="12" Foreground="{DynamicResource FgSubtleBrush}"
-                       HorizontalAlignment="Center"/>
-            <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="2" CornerRadius="12"
-                    Margin="40,20" Padding="20">
-                <TextBlock Text=".mp3  .flac  .wav  .m4a  .alac"
-                           Foreground="{DynamicResource FgSubtleBrush}" FontSize="11" HorizontalAlignment="Center"/>
-            </Border>
-        </StackPanel>
-    </Grid>
+        <Border x:Name="WelcomeContent" Visibility="{Binding ShowWelcome, Converter={StaticResource BoolToVis}}"
+                Background="{DynamicResource BgPrimaryBrush}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="🎵" FontSize="64" HorizontalAlignment="Center" Foreground="#585b70"/>
+                <TextBlock Text="Перетащите папку с аудио сюда" FontSize="18" Foreground="#a6adc8"
+                           HorizontalAlignment="Center" Margin="0,12"/>
+                <TextBlock Text="или нажмите Выбрать папку чтобы начать анализ" FontSize="12" Foreground="#585b70"
+                           HorizontalAlignment="Center"/>
+                <Border BorderBrush="#45475a" BorderThickness="2" CornerRadius="12"
+                        Margin="40,20" Padding="20">
+                    <TextBlock Text=".mp3  .flac  .wav  .m4a  .alac"
+                               Foreground="#585b70" FontSize="11" HorizontalAlignment="Center"/>
+                </Border>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>
