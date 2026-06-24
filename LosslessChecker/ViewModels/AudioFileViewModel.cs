@@ -529,10 +529,7 @@ public partial class AudioFileViewModel : ObservableObject
 
         if (_lastResult == null) return null;
 
-        var bmp = _spectroRenderer.Render(
-            _rawSpectro, _spectroWidth, _spectroHeight,
-            _lastResult.DurationSeconds, _lastResult.SampleRate,
-            _lastResult.CutoffFrequency);
+        var bmp = _spectroRenderer.Render(_rawSpectro, _spectroWidth, _spectroHeight);
 
         SpectrogramBitmap = bmp;
         _rawSpectro = null;

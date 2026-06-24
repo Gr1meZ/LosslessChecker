@@ -7,8 +7,8 @@ public class SpectrogramBuilder
 {
     private const int FftSize = 4096;
     private const int HopSize = 2048;
-    private const int FreqBins = 256;
-    private const int MaxFrames = 300;
+    private const int FreqBins = 512;
+    private const int MaxFrames = 600;
 
     private readonly float[] _frame = new float[FftSize];
     private readonly float[] _real = new float[FftSize];
