@@ -6,7 +6,8 @@ public class DrMeter
 {
     private const double BlockSec = 3.0;
     private const double TopPct = 0.20;
-    private const double TrimPct = 0.10; // discard top 10% of selected 20% (transient protection)
+    private const double TrimPct = 0.10;
+    private const double CalibrationDb = 3.0; // foobar2000 RMS is ~3dB higher than our time-domain measurement
     private const int ClipRunMin = 3;
 
     /// <summary>Legacy: mono DR + clipping for tests</summary>
@@ -135,7 +136,8 @@ public class DrMeter
         double avgPeak = working.Average(x => x.p);
         double avgRms = working.Average(x => x.r);
 
-        return avgPeak - avgRms;
+        double dr = avgPeak - avgRms - CalibrationDb;
+        return dr < 0 ? 0 : dr;
     }
 
     private static double ComputeClipping(float[] samples, int blockSize, int numBlocks)
