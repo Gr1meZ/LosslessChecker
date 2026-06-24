@@ -113,9 +113,15 @@ public class BitDepthValidator
         double toleranceDb = 16;
 
         bool lsbZero = CheckLsbZeroPadded(mono, claimedBitDepth);
-        bool suspicious = noiseFloorDb > expectedNoiseFloor + toleranceDb || lsbZero;
 
-        int effectiveBits = (int)Math.Round(-noiseFloorDb / 6.0);
+        // If noise floor is above -50 dB, there's no real silence in the track
+        // (music is always playing). Don't flag bit depth from noise floor alone.
+        bool noiseFloorSuspicious = noiseFloorDb < -50 && noiseFloorDb > expectedNoiseFloor + toleranceDb;
+        bool suspicious = noiseFloorSuspicious || lsbZero;
+
+        int effectiveBits = noiseFloorDb < -50
+            ? (int)Math.Round(-noiseFloorDb / 6.0)
+            : claimedBitDepth;
         effectiveBits = Math.Min(effectiveBits, claimedBitDepth);
 
         string verdict;

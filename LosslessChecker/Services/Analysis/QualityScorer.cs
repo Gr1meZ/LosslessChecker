@@ -23,7 +23,7 @@ public class QualityScorer
         if (result.IntegratedLufs > -7) score -= 2;
         else if (result.IntegratedLufs > -10) score -= 1;
 
-        if (Math.Abs(result.DcOffsetL) > 0.001 || Math.Abs(result.DcOffsetR) > 0.001)
+        if (Math.Abs(result.DcOffsetL) > 0.01 || Math.Abs(result.DcOffsetR) > 0.01)
             score -= 1;
 
         if (result.Correlation < 0) score -= 2;

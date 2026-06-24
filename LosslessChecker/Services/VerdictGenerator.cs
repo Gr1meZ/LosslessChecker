@@ -63,7 +63,7 @@ public class VerdictGenerator
         // Section 4
         sb.Append("4. ТЕХНИЧЕСКИЕ ПРОБЛЕМЫ: ");
         var flags = new List<string>();
-        if (Math.Abs(r.DcOffsetL) > 0.001 || Math.Abs(r.DcOffsetR) > 0.001)
+        if (Math.Abs(r.DcOffsetL) > 0.01 || Math.Abs(r.DcOffsetR) > 0.01)
             flags.Add($"DC смещение: L={r.DcOffsetL:F4}%, R={r.DcOffsetR:F4}%");
         if (r.Correlation < 0)
             flags.Add($"Корреляция фазы: {r.Correlation:F2} (несовместимо с моно)");

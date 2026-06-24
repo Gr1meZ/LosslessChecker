@@ -301,7 +301,7 @@ public partial class AudioFileViewModel : ObservableObject
         }
 
         // DC Offset
-        bool hasDc = Math.Abs(r.DcOffsetL) > 0.001 || Math.Abs(r.DcOffsetR) > 0.001;
+        bool hasDc = Math.Abs(r.DcOffsetL) > 0.01 || Math.Abs(r.DcOffsetR) > 0.01;
         items.Add(new MetricItem
         {
             Category = "Техника",
@@ -309,8 +309,8 @@ public partial class AudioFileViewModel : ObservableObject
             Value = $"L={r.DcOffsetL:F4}% R={r.DcOffsetR:F4}%",
             Status = hasDc ? "⚠ Обнаружено" : "✓ Нет",
             StatusColor = hasDc ? "#D29922" : "#2EA043",
-            Description = "Постоянная составляющая сигнала. Должно быть строго 0.0000%. Наличие съедает динамический диапазон и вызывает щелчки.",
-            Typical = "0.0000% — норма\n>0.001% — дефект оцифровки"
+            Description = "Постоянная составляющая сигнала. Должно быть близко к 0.0000%. Наличие выше 0.01% съедает динамический диапазон и вызывает щелчки.",
+            Typical = "0.0000% — норма\n>0.01% — дефект оцифровки"
         });
 
         // Phase

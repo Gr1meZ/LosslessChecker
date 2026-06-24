@@ -185,6 +185,11 @@ public class CutoffDetector
         if (ratio >= 0.95)
             encoderMatch = "None";
 
+        // Override: if cutoff > 90% Nyquist, this is the ADC's anti-aliasing filter,
+        // not a lossy codec brickwall. Don't penalize as Brickwall.
+        if (ratio >= 0.90 && shelfType == "Brickwall")
+            shelfType = "Natural";
+
         return (encoderMatch, shelfType);
     }
 

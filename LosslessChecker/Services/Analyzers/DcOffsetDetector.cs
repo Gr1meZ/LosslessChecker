@@ -4,7 +4,7 @@ namespace LosslessChecker.Services.Analyzers;
 
 public class DcOffsetDetector
 {
-    private const double ThresholdPercent = 0.001;
+    private const double ThresholdPercent = 0.01;
 
     public DcOffsetResult Analyze(StereoBuffer buffer)
     {

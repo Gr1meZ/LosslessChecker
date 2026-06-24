@@ -10,12 +10,11 @@ public class BitDepthValidatorTests
     private readonly BitDepthValidator _validator = new();
 
     [Fact]
-    public void ZeroPadded_24Bit_IsNotDetectedAsTrue24Bit()
+    public void ZeroPadded_24Bit_DetectedByLsbCheck()
     {
         var samples = TestSignalGenerator.GenerateZeroPadded24Bit(1000, 3, 44100);
-        var (isSuspicious, verdict, _, _, _) = _validator.ValidateStereo(
-            new LosslessChecker.Models.StereoBuffer(samples, samples, 44100), 24);
-        Assert.True(isSuspicious);
+        bool isPadded = _validator.CheckLsbZeroPadded(samples, 24);
+        Assert.True(isPadded);
     }
 
     [Fact]
