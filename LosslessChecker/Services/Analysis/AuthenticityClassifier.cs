@@ -6,7 +6,7 @@ public class AuthenticityClassifier
 {
     public string Classify(AnalysisResult result)
     {
-        if (result.SampleRate >= 80000 && result.CutoffFrequency < 22000)
+        if (result.SampleRate >= 88200 && result.CutoffFrequency < 22000)
             return "FAKE HI-RES";
 
         if (result.CutoffFrequency <= 16500)

@@ -6,7 +6,10 @@ public class UpscaleDetector
         double[] averagedSpectrum, int sampleRate)
     {
         int nyquist = sampleRate / 2;
-        if (nyquist <= 22050)
+        // Only check for upscale on true Hi-Res (>= 88.2 kHz).
+        // 48 kHz files without content above 22 kHz are native 48k recordings
+        // with normal ADC anti-aliasing — NOT upscales from CD.
+        if (sampleRate < 88200)
             return (false, "Standard sample rate, no upscale check needed.", 0);
 
         // Find HF content above CD Nyquist (22.05 kHz)
