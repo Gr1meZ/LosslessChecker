@@ -45,6 +45,20 @@ public class AudioAnalyzer
                 Channels = channels
             };
 
+            // Read tags (artist, album, genre, cover)
+            var tags = TagReader.Read(fileInfo.FilePath);
+            if (tags != null)
+            {
+                result = result with
+                {
+                    Artist = tags.Artist,
+                    Album = tags.Album,
+                    Genre = tags.Genre,
+                    FileName = tags.Title,
+                    CoverData = tags.CoverData
+                };
+            }
+
             if (ct.IsCancellationRequested)
                 return Cancelled(result);
 

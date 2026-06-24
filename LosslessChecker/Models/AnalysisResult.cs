@@ -6,10 +6,14 @@ public record AnalysisResult
     public string FilePath { get; init; } = "";
     public string FileName { get; init; } = "";
     public string Format { get; init; } = "";
+    public string Artist { get; init; } = "";
+    public string Album { get; init; } = "";
+    public string Genre { get; init; } = "";
     public int SampleRate { get; init; }
     public int BitDepth { get; init; }
     public int Channels { get; init; }
     public double DurationSeconds { get; init; }
+    public byte[]? CoverData { get; init; }
 
     // Cutoff & spectrum
     public double CutoffFrequency { get; init; }

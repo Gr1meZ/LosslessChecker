@@ -36,6 +36,11 @@ public partial class AudioFileViewModel : ObservableObject
     [ObservableProperty] private int _bitDepth;
     [ObservableProperty] private int _channels;
     [ObservableProperty] private string _encoderMatch = "";
+    [ObservableProperty] private string _artist = "";
+    [ObservableProperty] private string _album = "";
+    [ObservableProperty] private string _genre = "";
+    [ObservableProperty] private double _durationSeconds;
+    [ObservableProperty] private byte[]? _coverData;
     [ObservableProperty] private WriteableBitmap? _spectrogramBitmap;
 
     // Detail panel: metric items collection
@@ -80,6 +85,11 @@ public partial class AudioFileViewModel : ObservableObject
         SampleRate = r.SampleRate;
         BitDepth = r.BitDepth;
         Channels = r.Channels;
+        Artist = r.Artist;
+        Album = r.Album;
+        Genre = r.Genre;
+        DurationSeconds = r.DurationSeconds;
+        CoverData = r.CoverData;
         EncoderMatch = r.EncoderMatch;
 
         if (r.SpectrogramFlat is { Length: > 0 })
