@@ -163,7 +163,8 @@ public partial class MainViewModel : ObservableObject
             var queue = new ConcurrentQueue<AudioFileViewModel>(vms);
             int processed = 0;
 
-            var tasks = Enumerable.Range(0, Environment.ProcessorCount).Select(async _ =>
+            int concurrency = Math.Min(2, Environment.ProcessorCount);
+            var tasks = Enumerable.Range(0, concurrency).Select(async _ =>
             {
                 while (queue.TryDequeue(out var vm) && !ct.IsCancellationRequested)
                 {
