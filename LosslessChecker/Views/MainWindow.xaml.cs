@@ -57,10 +57,10 @@ public partial class MainWindow : Window
         var vm = _viewModel.SelectedFile;
         var lastResult = vm.LastResult;
 
-        if (lastResult?.SpectrogramFlat is { Length: > 0 })
+        if (lastResult?.SpectrogramDb is { Length: > 0 })
         {
             var window = new SpectrogramWindow(
-                lastResult.SpectrogramFlat,
+                lastResult.SpectrogramDb,
                 lastResult.SpectrogramWidth,
                 lastResult.SpectrogramHeight,
                 lastResult.DurationSeconds,

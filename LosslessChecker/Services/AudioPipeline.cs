@@ -133,7 +133,7 @@ public class AudioPipeline
             var (hasPreEcho, preEchoCount) = _artifacts.DetectPreEcho(mono, sampleRate);
             bool hasSpectralHoles = _artifacts.DetectSpectralHoles(spectrum, sampleRate / 2.0);
 
-            var (spectroData, spectroW, spectroH) = _spectro.Build(mono, sampleRate);
+            var spectroData = _spectro.Build(mono, sampleRate);
 
             var resamplingResult = _resampling.DetectFromSpectrum(spectrum, sampleRate);
 
@@ -183,9 +183,11 @@ public class AudioPipeline
                 HasAliasing = resamplingResult.HasAliasing,
                 HasRinging = resamplingResult.HasRinging,
                 ResamplingVerdict = resamplingResult.Verdict,
-                SpectrogramFlat = spectroData,
-                SpectrogramWidth = spectroW,
-                SpectrogramHeight = spectroH,
+                SpectrogramDb = spectroData.DbValues,
+                SpectrogramWidth = spectroData.Width,
+                SpectrogramHeight = spectroData.Height,
+                SpectrogramSampleRate = spectroData.SampleRate,
+                SpectrogramDuration = spectroData.Duration,
                 Mp3Bitrate = mp3Bitrate,
                 Mp3Encoder = mp3Encoder
             };

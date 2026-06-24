@@ -2,27 +2,39 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Shapes;
 using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
+using System.Windows.Threading;
 
 namespace LosslessChecker.Views;
 
 public partial class SpectrogramWindow : Window
 {
-    private readonly byte[]? _rawData;
+    private readonly float[]? _rawData;
     private readonly int _dataWidth, _dataHeight;
     private readonly double _durationSec, _sampleRate, _cutoffHz;
     private System.Windows.Point _lastMousePos;
+    private double _panX, _panY;
+    private double _scaleX = 1, _scaleY = 1;
     private bool _isPanning;
+    private readonly DispatcherTimer _resizeTimer;
+
+    private static readonly SolidColorBrush AxisBrush =
+        new(System.Windows.Media.Color.FromRgb(0xa6, 0xad, 0xc8));
+    private static readonly SolidColorBrush GridBrush =
+        new(System.Windows.Media.Color.FromRgb(0x45, 0x47, 0x5a));
+    private static readonly SolidColorBrush CutoffBrush =
+        new(System.Windows.Media.Color.FromRgb(0xf3, 0x8b, 0xa8));
 
     public SpectrogramWindow(BitmapSource? bmp, string title = "Spectrogram")
     {
         InitializeComponent();
         Title = $"Спектрограмма — {title}";
         SpectrogramImage.Source = bmp;
+        _resizeTimer = CreateResizeTimer();
     }
 
-    public SpectrogramWindow(byte[] rawData, int dataWidth, int dataHeight,
+    public SpectrogramWindow(float[] rawData, int dataWidth, int dataHeight,
         double durationSec, double sampleRate, double cutoffHz, string fileName)
     {
         InitializeComponent();
@@ -34,7 +46,19 @@ public partial class SpectrogramWindow : Window
         _cutoffHz = cutoffHz;
         Title = $"Спектрограмма — {fileName}";
         DataContext = new { Title = fileName };
+        _resizeTimer = CreateResizeTimer();
         RenderFull();
+    }
+
+    private DispatcherTimer CreateResizeTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+        timer.Tick += (s, e) =>
+        {
+            timer.Stop();
+            if (_rawData != null) RenderFull();
+        };
+        return timer;
     }
 
     private void RenderFull()
@@ -67,7 +91,7 @@ public partial class SpectrogramWindow : Window
             var tb = new TextBlock
             {
                 Text = freq >= 1000 ? $"{freq / 1000:F0}k" : $"{freq:F0}",
-                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xa6, 0xad, 0xc8)),
+                Foreground = AxisBrush,
                 FontSize = 9,
                 FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
             };
@@ -78,7 +102,7 @@ public partial class SpectrogramWindow : Window
             var line = new Line
             {
                 X1 = 0, Y1 = y, X2 = canvasW, Y2 = y,
-                Stroke = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x45, 0x47, 0x5a)),
+                Stroke = GridBrush,
                 StrokeThickness = 0.5,
                 Opacity = 0.3
             };
@@ -98,7 +122,7 @@ public partial class SpectrogramWindow : Window
                 var tb = new TextBlock
                 {
                     Text = label,
-                    Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xa6, 0xad, 0xc8)),
+                    Foreground = AxisBrush,
                     FontSize = 9,
                     FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
                 };
@@ -115,7 +139,7 @@ public partial class SpectrogramWindow : Window
             var cutLine = new Line
             {
                 X1 = 0, Y1 = cutY, X2 = canvasW, Y2 = cutY,
-                Stroke = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xf3, 0x8b, 0xa8)),
+                Stroke = CutoffBrush,
                 StrokeThickness = 1.5,
                 StrokeDashArray = new DoubleCollection { 6, 3 }
             };
@@ -124,7 +148,7 @@ public partial class SpectrogramWindow : Window
             var cutLabel = new TextBlock
             {
                 Text = $"Срез: {_cutoffHz:F0} Гц",
-                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xf3, 0x8b, 0xa8)),
+                Foreground = CutoffBrush,
                 FontSize = 9,
                 FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
             };
@@ -137,44 +161,64 @@ public partial class SpectrogramWindow : Window
     private void Window_MouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
     {
         var scale = e.Delta > 0 ? 1.1 : 0.9;
-        var st = SpectrogramImage.RenderTransform as ScaleTransform;
-        double sx = st?.ScaleX ?? 1, sy = st?.ScaleY ?? 1;
-        if (System.Windows.Input.Keyboard.Modifiers == ModifierKeys.Control) sx *= scale;
-        else if (System.Windows.Input.Keyboard.Modifiers == ModifierKeys.Shift) sy *= scale;
-        else { sx *= scale; sy *= scale; }
-        SpectrogramImage.RenderTransform = new ScaleTransform(Math.Clamp(sx, 0.5, 10), Math.Clamp(sy, 0.5, 10));
-        SpectrogramImage.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
+        if (System.Windows.Input.Keyboard.Modifiers == ModifierKeys.Control) _scaleX = Math.Clamp(_scaleX * scale, 0.5, 10);
+        else if (System.Windows.Input.Keyboard.Modifiers == ModifierKeys.Shift) _scaleY = Math.Clamp(_scaleY * scale, 0.5, 10);
+        else { _scaleX = Math.Clamp(_scaleX * scale, 0.5, 10); _scaleY = Math.Clamp(_scaleY * scale, 0.5, 10); }
+        ApplyTransform();
     }
 
     private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        _isPanning = true; _lastMousePos = e.GetPosition(this); SpectrogramImage.CaptureMouse();
+        _isPanning = true;
+        _lastMousePos = e.GetPosition(this);
+        SpectrogramImage.CaptureMouse();
     }
-    private void Window_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+
+    private void Window_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        _isPanning = false; SpectrogramImage.ReleaseMouseCapture();
+        _isPanning = false;
+        SpectrogramImage.ReleaseMouseCapture();
     }
+
     private void Window_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         if (!_isPanning) return;
         var pos = e.GetPosition(this);
-        double dx = pos.X - _lastMousePos.X, dy = pos.Y - _lastMousePos.Y;
-        var st = SpectrogramImage.RenderTransform as ScaleTransform;
-        var tt = new TranslateTransform(dx, dy);
-        SpectrogramImage.RenderTransform = st != null ? new TransformGroup { Children = { st, tt } } : tt;
+        _panX += pos.X - _lastMousePos.X;
+        _panY += pos.Y - _lastMousePos.Y;
         _lastMousePos = pos;
+        ApplyTransform();
     }
+
+    private void ApplyTransform()
+    {
+        SpectrogramImage.RenderTransform = new TransformGroup
+        {
+            Children =
+            {
+                new ScaleTransform(_scaleX, _scaleY),
+                new TranslateTransform(_panX, _panY)
+            }
+        };
+        SpectrogramImage.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
+    }
+
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (_rawData != null) { RenderFull(); }
+        _resizeTimer.Stop();
+        _resizeTimer.Start();
     }
+
     private void CopyPng_Click(object sender, RoutedEventArgs e)
     {
-        if (SpectrogramImage.Source is BitmapSource bmp) System.Windows.Clipboard.SetImage(bmp);
+        if (SpectrogramImage.Source is BitmapSource bmp)
+            System.Windows.Clipboard.SetImage(bmp);
     }
+
     private void ResetZoom_Click(object sender, RoutedEventArgs e)
     {
-        SpectrogramImage.RenderTransform = new ScaleTransform(1, 1);
-        SpectrogramImage.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
+        _scaleX = _scaleY = 1;
+        _panX = _panY = 0;
+        ApplyTransform();
     }
 }

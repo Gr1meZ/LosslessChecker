@@ -74,7 +74,7 @@ public partial class AudioFileViewModel : ObservableObject
 
     public string FilePath { get; }
 
-    private byte[]? _rawSpectro;
+    private float[]? _rawSpectro;
     private int _spectroWidth, _spectroHeight;
     private AnalysisResult? _lastResult;
     internal AnalysisResult? LastResult => _lastResult;
@@ -125,9 +125,9 @@ public partial class AudioFileViewModel : ObservableObject
         EncoderMatch = r.EncoderMatch;
         Mp3Bitrate = r.Mp3Bitrate;
 
-        if (r.SpectrogramFlat is { Length: > 0 })
+        if (r.SpectrogramDb is { Length: > 0 })
         {
-            _rawSpectro = r.SpectrogramFlat;
+            _rawSpectro = r.SpectrogramDb;
             _spectroWidth = r.SpectrogramWidth;
             _spectroHeight = r.SpectrogramHeight;
         }
@@ -578,6 +578,11 @@ public partial class AudioFileViewModel : ObservableObject
         SpectrogramBitmap = bmp;
         _rawSpectro = null;
         return bmp;
+    }
+
+    public void ClearSpectrogramData()
+    {
+        _rawSpectro = null;
     }
 
     [RelayCommand]

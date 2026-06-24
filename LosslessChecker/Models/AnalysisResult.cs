@@ -89,7 +89,9 @@ public record AnalysisResult
     public AnalysisStatus AnalysisStatus { get; init; } = AnalysisStatus.Pending;
     public string? ErrorMessage { get; init; }
 
-    public byte[] SpectrogramFlat { get; init; } = Array.Empty<byte>();
+    public float[]? SpectrogramDb { get; init; }
     public int SpectrogramWidth { get; init; }
     public int SpectrogramHeight { get; init; }
+    public int SpectrogramSampleRate { get; init; }
+    public double SpectrogramDuration { get; init; }
 }
