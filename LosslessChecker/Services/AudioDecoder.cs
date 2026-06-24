@@ -73,7 +73,7 @@ public class AudioDecoder
             double peakDb = 20.0 * Math.Log10(Math.Max(maxAbs, 1e-10));
             double rmsDb = 20.0 * Math.Log10(Math.Max(rms, 1e-10));
             System.IO.File.AppendAllText(
-                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lossless_dr_debug.log"),
+                System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lossless_dr_debug.log"),
                 $"{DateTime.Now:HH:mm:ss.fff} LEVEL[{label}]: peak={peakDb:F2} rms={rmsDb:F2} nsamples={arr.Length} sr={sampleRate} first5=[{arr[0]:F6},{arr[1]:F6},{arr[2]:F6},{arr[3]:F6},{arr[4]:F6}]{Environment.NewLine}");
         }
         catch { }

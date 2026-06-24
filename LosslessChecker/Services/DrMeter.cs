@@ -95,7 +95,7 @@ public class DrMeter
             double avgPW = work.Count > 0 ? work.Average(x => x.p) : avgP;
             double avgRW = work.Count > 0 ? work.Average(x => x.r) : avgR;
 
-            var logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lossless_dr_debug.log");
+            var logPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lossless_dr_debug.log");
             System.IO.File.AppendAllText(logPath,
                 $"{DateTime.Now:HH:mm:ss.fff} DRchan: blocks={indexed.Count} top20P={avgP:F2} top20R={avgR:F2} dr20={avgP-avgR:F2} trimmed: workP={avgPW:F2} workR={avgRW:F2} dr={avgPW-avgRW:F2}{Environment.NewLine}");
             // Log top 5 blocks
