@@ -77,7 +77,7 @@ public class VerdictGenerator
 
         // Section 5
         sb.Append("5. ИТОГОВЫЙ ВЕРДИКТ: ");
-        sb.Append($"{r.QualityScore}/10");
+        sb.Append($"{r.QualityScorePercent:F0}%");
         sb.Append(" | ");
         string decRu = r.Decision switch
         {
@@ -88,9 +88,9 @@ public class VerdictGenerator
             _ => r.Decision
         };
         sb.Append(decRu);
-        if (r.QualityScore >= 7 && r.Authenticity == "TRUE LOSSLESS")
+        if (r.QualityScorePercent >= 70 && r.Authenticity == "TRUE LOSSLESS")
             sb.Append(" — Отличный мастеринг, подлинный lossless");
-        else if (r.Authenticity == "TRUE LOSSLESS" && r.QualityScore < 4)
+        else if (r.Authenticity == "TRUE LOSSLESS" && r.QualityScorePercent < 40)
             sb.Append(" — Подлинный, но плохо смастеренный");
         else if (r.Authenticity.StartsWith("FAKE"))
             sb.Append(" — Не подлинный, ищите оригинал");

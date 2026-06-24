@@ -18,7 +18,7 @@ public class QualityScorerTests
             DcOffsetL = 0, DcOffsetR = 0, Correlation = 1.0, LsbZeroPadded = false
         };
         var (score, decision) = _scorer.Score(r);
-        Assert.Equal(10, score);
+        Assert.Equal(100, score);
         Assert.Equal("KEEP", decision);
     }
 
@@ -32,7 +32,7 @@ public class QualityScorerTests
             DcOffsetL = 0, DcOffsetR = 0, Correlation = 1.0, LsbZeroPadded = false
         };
         var (score, decision) = _scorer.Score(r);
-        Assert.True(score <= 5);
+        Assert.True(score <= 60);
         Assert.StartsWith("KEEP", decision);
     }
 
@@ -61,5 +61,19 @@ public class QualityScorerTests
         var (_, decision) = _scorer.Score(r);
         Assert.NotEqual("REPLACE", decision);
         Assert.Contains("KEEP", decision);
+    }
+
+    [Fact]
+    public void Suspicious_ReturnsInvestigate()
+    {
+        var r = new AnalysisResult
+        {
+            Authenticity = "SUSPICIOUS", DynamicRange = 12, ClippingPercent = 0,
+            HasIsp = false, IntegratedLufs = -14,
+            DcOffsetL = 0, DcOffsetR = 0, Correlation = 1.0, LsbZeroPadded = false
+        };
+        var (score, decision) = _scorer.Score(r);
+        Assert.True(score >= 90);
+        Assert.Equal("INVESTIGATE", decision);
     }
 }

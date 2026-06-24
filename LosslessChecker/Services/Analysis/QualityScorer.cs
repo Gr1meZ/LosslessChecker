@@ -4,42 +4,58 @@ namespace LosslessChecker.Services.Analysis;
 
 public class QualityScorer
 {
-    public (int score, string decision) Score(AnalysisResult result)
+    public (double scorePercent, string decision) Score(AnalysisResult r)
     {
-        int score = 10;
+        double score = 100;
 
-        if (result.DynamicRange < 3) score -= 3;
-        else if (result.DynamicRange < 5) score -= 1;
+        // DR: critical weight
+        if (r.DynamicRange < 3) score -= 25;
+        else if (r.DynamicRange < 5) score -= 15;
+        else if (r.DynamicRange < 6) score -= 8;
 
-        if (result.ClippingPercent > 0.5) score -= 2;
-        else if (result.ClippingPercent > 0) score -= 1;
+        // Clipping: high weight
+        if (r.ClippingPercent > 5) score -= 20;
+        else if (r.ClippingPercent > 2) score -= 12;
+        else if (r.ClippingPercent > 0.5) score -= 6;
+        else if (r.ClippingPercent > 0) score -= 2;
 
-        if (result.HasIsp)
+        // True Peak ISP: high weight
+        if (r.HasIsp)
         {
-            score -= 1;
-            if (result.TruePeakDb > 1.0) score -= 1;
+            score -= 8;
+            if (r.TruePeakDb > 1.0) score -= 5;
         }
 
-        if (result.IntegratedLufs > -7) score -= 2;
-        else if (result.IntegratedLufs > -10) score -= 1;
+        // LUFS: medium weight
+        if (r.IntegratedLufs > -7) score -= 15;
+        else if (r.IntegratedLufs > -10) score -= 8;
+        else if (r.IntegratedLufs > -14) score -= 3;
 
-        if (Math.Abs(result.DcOffsetL) > 0.01 || Math.Abs(result.DcOffsetR) > 0.01)
-            score -= 1;
+        // DC Offset: low weight
+        if (Math.Abs(r.DcOffsetL) > 0.05 || Math.Abs(r.DcOffsetR) > 0.05) score -= 8;
+        else if (Math.Abs(r.DcOffsetL) > 0.01 || Math.Abs(r.DcOffsetR) > 0.01) score -= 3;
 
-        if (result.Correlation < 0) score -= 2;
+        // Phase: medium weight
+        if (r.Correlation < -0.5) score -= 12;
+        else if (r.Correlation < 0) score -= 6;
 
-        if (result.LsbZeroPadded) score -= 1;
+        // LSB zero-pad: low weight
+        if (r.LsbZeroPadded) score -= 5;
 
-        score = Math.Max(1, Math.Min(10, score));
+        score = Math.Max(0, Math.Min(100, score));
 
-        string decision = result.Authenticity switch
+        // Decision
+        string decision;
+        if (r.Authenticity == "TRUE LOSSLESS")
         {
-            "TRUE LOSSLESS" when score >= 7 => "KEEP",
-            "TRUE LOSSLESS" when score >= 4 => "KEEP",
-            "TRUE LOSSLESS" => "KEEP (poor master)",
-            "SUSPICIOUS" => "INVESTIGATE",
-            _ => "REPLACE"
-        };
+            if (score >= 80) decision = "KEEP";
+            else if (score >= 50) decision = "KEEP";
+            else decision = "KEEP (poor master)";
+        }
+        else if (r.Authenticity == "SUSPICIOUS")
+            decision = "INVESTIGATE";
+        else
+            decision = "REPLACE";
 
         return (score, decision);
     }

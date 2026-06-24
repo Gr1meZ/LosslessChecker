@@ -17,7 +17,7 @@ public class AudioAnalyzer
     private readonly BitDepthValidator _bitDepth = new();
     private readonly UpscaleDetector _upscale = new();
     private readonly SpectrogramBuilder _spectro = new();
-    private readonly AuthenticityClassifier _authClassifier = new();
+    private readonly LosslessScorer _losslessScorer = new();
     private readonly QualityScorer _qualityScorer = new();
     private readonly VerdictGenerator _verdict = new();
 
@@ -155,11 +155,17 @@ public class AudioAnalyzer
                 SpectrogramHeight = spectroH
             };
 
-            result = result with { Authenticity = _authClassifier.Classify(result) };
-            var (qualityScore, decision) = _qualityScorer.Score(result);
+            var losslessScore = _losslessScorer.Score(result);
+            var hiResScore = _losslessScorer.ScoreHiRes(result);
+            var (qualityPercent, decision) = _qualityScorer.Score(result);
             result = result with
             {
-                QualityScore = qualityScore,
+                Authenticity = _losslessScorer.Classify(result),
+                LosslessScore = Math.Round(losslessScore, 1),
+                HiResScore = Math.Round(hiResScore, 1),
+                QualityScorePercent = Math.Round(qualityPercent, 1),
+                QualityScore = (int)Math.Round(qualityPercent / 10.0),
+                MetricsCoverage = ComputeMetricsCoverage(result),
                 Decision = decision,
                 StructuredReport = _verdict.Generate(result),
                 AnalysisStatus = AnalysisStatus.Completed
@@ -175,6 +181,20 @@ public class AudioAnalyzer
         {
             return result with { AnalysisStatus = AnalysisStatus.Error, ErrorMessage = ex.Message };
         }
+    }
+
+    private static double ComputeMetricsCoverage(AnalysisResult r)
+    {
+        int passed = 0, total = 8;
+        if (r.CutoffFrequency / (r.SampleRate / 2.0) >= 0.90) passed++;
+        if (r.ArtifactLevel == "None" || r.ArtifactLevel == "Weak") passed++;
+        if (r.DynamicRange >= 3) passed++;
+        if (r.ClippingPercent < 0.5) passed++;
+        if (!r.HasIsp) passed++;
+        if (r.IntegratedLufs < -7 || r.IntegratedLufs > -1) passed++;
+        if (r.Correlation >= 0) passed++;
+        if (!r.LsbZeroPadded) passed++;
+        return Math.Round((double)passed / total * 100, 0);
     }
 
     private static AnalysisResult Cancelled(AnalysisResult r)

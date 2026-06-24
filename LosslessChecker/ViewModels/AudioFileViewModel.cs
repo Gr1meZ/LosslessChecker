@@ -19,8 +19,13 @@ public partial class AudioFileViewModel : ObservableObject
     [ObservableProperty] private double _truePeakDb;
     [ObservableProperty] private double _clippingPercent;
     [ObservableProperty] private string _authenticity = "";
+    [ObservableProperty] private double _losslessScorePercent;
+    [ObservableProperty] private double _hiResScorePercent;
     [ObservableProperty] private int _qualityScore;
+    [ObservableProperty] private double _qualityScorePercent;
+    [ObservableProperty] private double _metricsCoverage;
     [ObservableProperty] private string _decision = "";
+    [ObservableProperty] private string _verdict = "";
     [ObservableProperty] private string _artifactLevel = "None";
     [ObservableProperty] private bool _hasArtifacts;
     [ObservableProperty] private AnalysisStatus _analysisStatus = AnalysisStatus.Pending;
@@ -69,8 +74,13 @@ public partial class AudioFileViewModel : ObservableObject
         TruePeakDb = r.TruePeakDb;
         ClippingPercent = r.ClippingPercent;
         Authenticity = r.Authenticity;
+        LosslessScorePercent = r.LosslessScore;
+        HiResScorePercent = r.HiResScore;
         QualityScore = r.QualityScore;
+        QualityScorePercent = r.QualityScorePercent;
+        MetricsCoverage = r.MetricsCoverage;
         Decision = r.Decision;
+        Verdict = r.Verdict;
         ArtifactLevel = r.ArtifactLevel;
         HasArtifacts = r.HasArtifacts;
         AnalysisStatus = r.AnalysisStatus;
@@ -412,13 +422,13 @@ public partial class AudioFileViewModel : ObservableObject
         });
 
         // Quality
-        string qualStatus = r.QualityScore >= 7 ? "✓ Отлично" : r.QualityScore >= 4 ? "⚠ Нормально" : "✗ Плохо";
-        string qualColor = r.QualityScore >= 7 ? "#2EA043" : r.QualityScore >= 4 ? "#D29922" : "#CF222E";
+        string qualStatus = r.QualityScorePercent >= 70 ? "✓ Отлично" : r.QualityScorePercent >= 40 ? "⚠ Нормально" : "✗ Плохо";
+        string qualColor = r.QualityScorePercent >= 70 ? "#2EA043" : r.QualityScorePercent >= 40 ? "#D29922" : "#CF222E";
         items.Add(new MetricItem
         {
             Category = "Итог",
             Name = "Качество мастеринга",
-            Value = $"{r.QualityScore}/10",
+            Value = $"{r.QualityScorePercent:F0}%",
             Status = qualStatus,
             StatusColor = qualColor,
             Description = "Оценка качества мастеринга от 1 до 10. Учитывает DR, клиппинг, True Peak, LUFS, DC Offset, фазу. НЕ влияет на аутентичность: даже плохо смастеренный файл может быть настоящим lossless.",

@@ -15,10 +15,14 @@ public class ScoreToColorConverter : IValueConverter
             _ => -1
         };
 
-        if (score >= 7)
+        if (score >= 70)
             return new SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 160, 67));     // green
-        if (score >= 4)
+        if (score >= 40)
             return new SolidColorBrush(System.Windows.Media.Color.FromRgb(210, 153, 34));     // amber
+        if (score >= 7)
+            return new SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 160, 67));     // green (1-10 scale)
+        if (score >= 4)
+            return new SolidColorBrush(System.Windows.Media.Color.FromRgb(210, 153, 34));     // amber (1-10 scale)
         if (score >= 1)
             return new SolidColorBrush(System.Windows.Media.Color.FromRgb(207, 34, 46));     // red
 
