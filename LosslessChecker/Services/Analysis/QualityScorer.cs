@@ -8,8 +8,8 @@ public class QualityScorer
     {
         int score = 10;
 
-        if (result.DynamicRange < 6) score -= 3;
-        else if (result.DynamicRange < 8) score -= 1;
+        if (result.DynamicRange < 3) score -= 3;
+        else if (result.DynamicRange < 5) score -= 1;
 
         if (result.ClippingPercent > 0.5) score -= 2;
         else if (result.ClippingPercent > 0) score -= 1;

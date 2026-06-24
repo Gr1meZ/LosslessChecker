@@ -185,8 +185,8 @@ public partial class AudioFileViewModel : ObservableObject
         items.Add(new MetricItem { Name = "Динамический диапазон и громкость", IsHeader = true });
 
         // DR
-        string drStatus = r.DynamicRange >= 13 ? "✓ Аудиофил" : r.DynamicRange >= 9 ? "✓ Хорошо" : r.DynamicRange >= 6 ? "⚠ Сжато" : "✗ Пережато";
-        string drColor = r.DynamicRange >= 9 ? "#2EA043" : r.DynamicRange >= 6 ? "#D29922" : "#CF222E";
+        string drStatus = r.DynamicRange >= 10 ? "✓ Аудиофил" : r.DynamicRange >= 6 ? "✓ Хорошо" : r.DynamicRange >= 3 ? "⚠ Сжато" : "✗ Пережато";
+        string drColor = r.DynamicRange >= 6 ? "#2EA043" : r.DynamicRange >= 3 ? "#D29922" : "#CF222E";
         items.Add(new MetricItem
         {
             Category = "Динамика",
@@ -194,8 +194,8 @@ public partial class AudioFileViewModel : ObservableObject
             Value = $"DR{r.DynamicRange:F0}",
             Status = drStatus,
             StatusColor = drColor,
-            Description = "Разница между пиковым и средним уровнем громкости (TT DR Meter). Высокий DR — живой, дышащий звук. Низкий DR — 'кирпичная стена' лимитера, утомляет слух (Loudness War).",
-            Typical = "DR13+ — аудиофил (джаз, классика)\nDR9–12 — хорошо (рок, качественный поп)\nDR6–8 — сжато (современный поп, EDM)\nDR<6 — пережато (громко, плоско)"
+            Description = "Разница между пиковым и средним уровнем громкости (TT DR Meter). Высокий DR — живой, дышащий звук. Низкий DR — 'кирпичная стена' лимитера, утомляет слух (Loudness War). Откалибровано под foobar2000.",
+            Typical = "DR10+ — аудиофил (джаз, классика)\nDR6–9 — хорошо (рок, качественный поп)\nDR3–5 — сжато (современный поп, EDM)\nDR<3 — пережато (громко, плоско)"
         });
 
         // True Peak

@@ -49,9 +49,9 @@ public class VerdictGenerator
 
         // Section 3
         sb.Append("3. ДИНАМИКА: ");
-        if (r.DynamicRange >= 13) sb.Append("АУДИОФИЛ");
-        else if (r.DynamicRange >= 9) sb.Append("ХОРОШО");
-        else if (r.DynamicRange >= 6) sb.Append("СЖАТО");
+        if (r.DynamicRange >= 10) sb.Append("АУДИОФИЛ");
+        else if (r.DynamicRange >= 6) sb.Append("ХОРОШО");
+        else if (r.DynamicRange >= 3) sb.Append("СЖАТО");
         else sb.Append("ПЕРЕЖАТО");
         sb.Append($" | DR{r.DynamicRange:F0}");
         if (r.IntegratedLufs < -1)
