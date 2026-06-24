@@ -360,6 +360,96 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private async Task AddFiles()
+    {
+        var dialog = new System.Windows.Forms.OpenFileDialog
+        {
+            Multiselect = true,
+            Title = "Add audio files",
+            Filter = "Audio Files|*.mp3;*.flac;*.wav;*.m4a;*.alac"
+        };
+        if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+        await ScanAndAppend(dialog.FileNames);
+    }
+
+    public async Task ScanAndAppend(IEnumerable<string> paths)
+    {
+        var existingPaths = new HashSet<string>(Files.Select(f => f.FilePath), StringComparer.OrdinalIgnoreCase);
+        var newFileInfos = new List<AudioFileInfo>();
+
+        foreach (var path in paths)
+        {
+            if (System.IO.File.Exists(path))
+            {
+                var ext = System.IO.Path.GetExtension(path);
+                if (".mp3.flac.wav.m4a.alac".Contains(ext.ToLowerInvariant()) && existingPaths.Add(path))
+                    newFileInfos.Add(new AudioFileInfo(path, System.IO.Path.GetFileName(path), 0));
+            }
+            else if (System.IO.Directory.Exists(path))
+            {
+                var scanned = _scanner.ScanFolder(path);
+                foreach (var fi in scanned)
+                    if (existingPaths.Add(fi.FilePath))
+                        newFileInfos.Add(fi);
+            }
+        }
+
+        if (newFileInfos.Count == 0) return;
+
+        IsProcessing = true;
+        ShowWelcome = false;
+        var ct = (_cts = new CancellationTokenSource()).Token;
+
+        try
+        {
+            var vms = newFileInfos.Select(f => new AudioFileViewModel(f)).ToList();
+            foreach (var vm in vms)
+                Files.Add(vm);
+
+            var queue = new ConcurrentQueue<AudioFileViewModel>(vms);
+            int newTotal = newFileInfos.Count;
+            int newProcessed = 0;
+            int startTotal = ProcessedFiles;
+
+            int concurrency = Math.Min(2, Environment.ProcessorCount);
+            var tasks = Enumerable.Range(0, concurrency).Select(async _ =>
+            {
+                while (queue.TryDequeue(out var vm) && !ct.IsCancellationRequested)
+                {
+                    vm.AnalysisStatus = AnalysisStatus.Processing;
+                    var fileInfo = new AudioFileInfo(vm.FilePath, vm.FileName, 0);
+                    var result = await Task.Run(() => _analyzer.Analyze(fileInfo, ct), ct);
+                    vm.ApplyResult(result);
+                    int done = Interlocked.Increment(ref newProcessed);
+                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        TotalFiles = startTotal + newProcessed;
+                        ProcessedFiles = startTotal + newProcessed;
+                        if (done % 5 == 0 || done == newTotal)
+                            Progress = (double)(startTotal + done) / (startTotal + newTotal) * 100.0;
+                        if (result.AnalysisStatus == AnalysisStatus.Error) ErrorCount++;
+                        else if (result.Decision.StartsWith("KEEP")) KeepCount++;
+                        else if (result.Decision == "INVESTIGATE") InvestigateCount++;
+                        else if (result.Decision == "REPLACE") ReplaceCount++;
+                        if (done % 5 == 0 || done == newTotal) UpdateSummary();
+                    });
+                }
+            });
+            await Task.WhenAll(tasks);
+            PopulateArtistGroups();
+            _baseFiles = Files;
+            ApplyFilters();
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            IsProcessing = false;
+            UpdateSummary();
+            ShowWelcome = Files.Count == 0;
+        }
+    }
+
     private void PopulateArtistGroups()
     {
         var groups = Files
@@ -374,15 +464,28 @@ public partial class MainViewModel : ObservableObject
                     .OrderBy(g => g.Key)
                     .Select(albumGroup =>
                     {
-                        var first = albumGroup.First();
-                        return new AlbumGroup
+                        var tracks = albumGroup.OrderBy(f => f.FileName).ToList();
+                        var first = tracks.First();
+                        var album = new AlbumGroup
                         {
                             AlbumName = albumGroup.Key,
                             Genre = first.Genre,
                             CoverData = first.CoverData,
-                            Tracks = new ObservableCollection<AudioFileViewModel>(
-                                albumGroup.OrderBy(f => f.FileName))
+                            Tracks = new ObservableCollection<AudioFileViewModel>(tracks)
                         };
+                        var completed = tracks.Where(t => t.AnalysisStatus == Models.AnalysisStatus.Completed).ToList();
+                        if (completed.Count > 0)
+                        {
+                            album.AverageLosslessScore = completed.Average(t => t.LosslessScorePercent);
+                            album.AverageQualityScore = completed.Average(t => t.QualityScorePercent);
+                            album.AverageDynamicRange = completed.Average(t => t.DynamicRange);
+                            album.KeepCount = completed.Count(t => t.Decision.StartsWith("KEEP"));
+                            album.InvestigateCount = completed.Count(t => t.Decision == "INVESTIGATE");
+                            album.ReplaceCount = completed.Count(t => t.Decision == "REPLACE");
+                            album.AlbumVerdict = album.ReplaceCount > 0 ? "REPLACE"
+                                : album.InvestigateCount > 0 ? "NOT SURE" : "LOSSLESS";
+                        }
+                        return album;
                     });
                 foreach (var album in albums)
                     artist.Albums.Add(album);

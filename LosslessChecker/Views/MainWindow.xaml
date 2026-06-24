@@ -267,6 +267,12 @@
                       CanUserSortColumns="True"
                       Sorting="DataGrid_Sorting"
                       SelectionChanged="DataGrid_SelectionChanged">
+                <DataGrid.Resources>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#89b4fa"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1e1e2e"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#45475a"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#cdd6f4"/>
+                </DataGrid.Resources>
                 <DataGrid.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="📂 Открыть папку с файлом" Click="OpenFolder_Click"/>
