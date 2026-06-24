@@ -10,8 +10,8 @@ public class SpectrogramBuilder
 {
     private const int FftSize = 4096;
     private const int HopSize = 1024;
-    private const int FreqBins = 512;
-    private const int MaxFrames = 600;
+    private const int FreqBins = 1024;
+    private const int MaxFrames = 1200;
     private const double DbFloor = -96.0;
 
     private readonly float[] _window = Window.Hann(FftSize);

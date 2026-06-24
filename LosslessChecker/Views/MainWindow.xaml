@@ -126,21 +126,30 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" Content="📁 Выбрать папку" Command="{Binding SelectFolderCommand}"
+                <Button Grid.Column="0" Content="📁 Папка" Command="{Binding SelectFolderCommand}"
                         Style="{StaticResource PrimaryButtonStyle}"
-                        Width="140" Height="34" Margin="0,0,8,0"/>
-                <Button Grid.Column="1" Content="⏹ Стоп" Command="{Binding StopCommand}"
+                        Width="100" Height="34" Margin="0,0,6,0"/>
+                <Button Grid.Column="1" Content="📂 Файлы" Command="{Binding SelectFilesCommand}"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Width="90" Height="34" Margin="0,0,6,0"/>
+                <Button Grid.Column="2" Content="⏹ Стоп" Command="{Binding StopCommand}"
                         Style="{StaticResource DangerButtonStyle}"
-                        Width="80" Height="34" Margin="0,0,8,0"/>
-                <Button Grid.Column="2" Content="📁 Добавить" Command="{Binding AddFilesCommand}"
+                        Width="80" Height="34" Margin="0,0,6,0"/>
+                <Button Grid.Column="3" Content="➕ Добавить" Command="{Binding AddFilesCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
-                        Width="110" Height="34" Margin="0,0,8,0"/>
-                <Button Grid.Column="3" Content="📊 Экспорт" Command="{Binding ExportCommand}"
+                        Width="100" Height="34" Margin="0,0,6,0"/>
+                <Button Grid.Column="4" Content="📊 Экспорт" Command="{Binding ExportCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
-                        Width="90" Height="34" Margin="0,0,8,0"/>
-                <ProgressBar Grid.Column="4" Value="{Binding Progress}" Minimum="0" Maximum="100"
+                        Width="90" Height="34" Margin="0,0,6,0"/>
+                <Button Grid.Column="5" Content="🌓" Command="{Binding ToggleThemeCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="40" Height="34" Margin="0,0,6,0"
+                        ToolTip="Сменить тему"/>
+                <ProgressBar Grid.Column="6" Value="{Binding Progress}" Minimum="0" Maximum="100"
                              Height="8" Margin="20,0,0,0"
                              Foreground="{DynamicResource ProgressGradientBrush}"
                              Background="{DynamicResource BgTertiaryBrush}"/>
@@ -321,8 +330,47 @@
                             Style="{StaticResource SecondaryButtonStyle}"
                             Height="28" Margin="0,0,0,8"/>
 
+                    <!-- Album Summary -->
+                    <Border Style="{StaticResource CardStyle}" Padding="12,10" Margin="0,0,0,8"
+                            Visibility="{Binding SelectedGroup, Converter={StaticResource NullToVis}}"
+                            Effect="{StaticResource ShadowE2}">
+                        <StackPanel>
+                            <TextBlock FontSize="14" FontWeight="Bold" Foreground="{DynamicResource FgPrimaryBrush}"
+                                       Text="{Binding SelectedGroup.AlbumName}" TextTrimming="CharacterEllipsis" Margin="0,0,0,6"/>
+                            <Border CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                    Background="{Binding SelectedGroup.AlbumVerdict, Converter={StaticResource DecToColor}}">
+                                <TextBlock FontSize="12" FontWeight="Bold" Foreground="{DynamicResource BgPrimaryBrush}"
+                                           Text="{Binding SelectedGroup.AlbumVerdict, StringFormat=ALBUM: {0}}"/>
+                            </Border>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" FontSize="11" Foreground="{DynamicResource FgMutedBrush}"
+                                           Text="{Binding SelectedGroup.AverageQualityScore, StringFormat=Ср. качество: {0:F0}%}"/>
+                                <TextBlock Grid.Row="0" Grid.Column="1" FontSize="11" Foreground="{DynamicResource FgMutedBrush}"
+                                           Text="{Binding SelectedGroup.AverageDynamicRange, StringFormat=Ср. DR: {0:F0}}"/>
+                                <TextBlock Grid.Row="1" Grid.Column="0" FontSize="11" Foreground="{DynamicResource LosslessGreenBrush}"
+                                           Text="{Binding SelectedGroup.KeepCount, StringFormat=KEEP: {0}}"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Foreground="{DynamicResource SuspiciousAmberBrush}"
+                                           Text="{Binding SelectedGroup.InvestigateCount, StringFormat=INVESTIGATE: {0}}"/>
+                                <TextBlock Grid.Row="2" Grid.Column="0" FontSize="11" Foreground="{DynamicResource FakeRedBrush}"
+                                           Text="{Binding SelectedGroup.ReplaceCount, StringFormat=REPLACE: {0}}"/>
+                                <TextBlock Grid.Row="2" Grid.Column="1" FontSize="11" Foreground="{DynamicResource FgMutedBrush}"
+                                           Text="{Binding SelectedGroup.Tracks.Count, StringFormat=Треков: {0}}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Cover art -->
-                    <Border Style="{StaticResource CardStyle}" Height="200" Margin="0,0,0,8">
+                    <Border Style="{StaticResource CardStyle}" Height="200" Margin="0,0,0,8"
+                            Visibility="{Binding SelectedFile, Converter={StaticResource NullToVis}}">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -460,7 +508,13 @@
 
         <!-- Summary bar -->
         <Border Grid.Row="2" Style="{StaticResource GlassCardStyle}" Padding="12,8" Margin="0,6,0,0">
-            <TextBlock Text="{Binding SummaryText}" Foreground="{DynamicResource FgMutedBrush}" FontSize="13"/>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding SummaryText}" Foreground="{DynamicResource FgMutedBrush}" FontSize="13"
+                           Visibility="{Binding CurrentlyProcessing, Converter={StaticResource NullToVisInverse}}"/>
+                <TextBlock Text="{Binding CurrentlyProcessing}" Foreground="{DynamicResource AccentBrush}" FontSize="13"
+                           FontWeight="SemiBold"
+                           Visibility="{Binding CurrentlyProcessing, Converter={StaticResource NullToVis}}"/>
+            </StackPanel>
         </Border>
         </Grid>
         </Border>

@@ -65,6 +65,7 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel(IDialogService dialogService)
     {
         _dialogService = dialogService;
+        _isDarkTheme = LoadThemeSetting();
         FilesView = CollectionViewSource.GetDefaultView(_files);
         FilesView.Filter = FilterFile;
     }
@@ -105,6 +106,64 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private string _summaryText = "Ready";
+
+    [ObservableProperty]
+    private string _currentlyProcessing = "";
+
+    [ObservableProperty]
+    private bool _isDarkTheme = true;
+
+    [RelayCommand]
+    private void ToggleTheme()
+    {
+        IsDarkTheme = !IsDarkTheme;
+        ApplyTheme(IsDarkTheme);
+        SaveThemeSetting(IsDarkTheme);
+    }
+
+    private static void ApplyTheme(bool isDark)
+    {
+        var app = System.Windows.Application.Current;
+        var dict = app.Resources.MergedDictionaries;
+        dict.Clear();
+        dict.Add(new System.Windows.ResourceDictionary
+        {
+            Source = new System.Uri(isDark ? "Themes/Dark.xaml" : "Themes/Light.xaml", System.UriKind.Relative)
+        });
+    }
+
+    private static void SaveThemeSetting(bool isDark)
+    {
+        try
+        {
+            var dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "LosslessChecker");
+            System.IO.Directory.CreateDirectory(dir);
+            var path = System.IO.Path.Combine(dir, "settings.json");
+            System.IO.File.WriteAllText(path,
+                System.Text.Json.JsonSerializer.Serialize(new { theme = isDark ? "dark" : "light" }));
+        }
+        catch { }
+    }
+
+    public static bool LoadThemeSetting()
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "LosslessChecker", "settings.json");
+            if (System.IO.File.Exists(path))
+            {
+                var json = System.IO.File.ReadAllText(path);
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                return doc.RootElement.GetProperty("theme").GetString() != "light";
+            }
+        }
+        catch { }
+        return true;
+    }
 
     [ObservableProperty]
     private int _keepCount;
@@ -181,11 +240,13 @@ public partial class MainViewModel : ObservableObject
         {
             case ArtistGroup artist:
                 SelectedGroup = null;
+                SelectedFile = null;
                 _selectionFilter = new HashSet<AudioFileViewModel>(
                     artist.Albums.SelectMany(a => a.Tracks));
                 break;
             case AlbumGroup album:
                 SelectedGroup = album;
+                SelectedFile = null;
                 _selectionFilter = new HashSet<AudioFileViewModel>(album.Tracks);
                 break;
             case AudioFileViewModel track:
@@ -244,6 +305,36 @@ public partial class MainViewModel : ObservableObject
 
         ShowWelcome = false;
         await ScanAndAnalyze(folderPath);
+    }
+
+    [RelayCommand]
+    private async Task SelectFiles()
+    {
+        var dialog = new System.Windows.Forms.OpenFileDialog
+        {
+            Multiselect = true,
+            Title = "Выберите аудиофайлы",
+            Filter = "Audio Files|*.mp3;*.flac;*.wav;*.m4a;*.alac|All Files|*.*"
+        };
+
+        if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+            return;
+
+        ShowWelcome = false;
+        Files.Clear();
+        ArtistGroups.Clear();
+        _selectionFilter = null;
+        FilesView.Refresh();
+        SelectedGroup = null;
+        ProcessedFiles = 0;
+        ErrorCount = 0;
+        KeepCount = 0;
+        InvestigateCount = 0;
+        ReplaceCount = 0;
+        CurrentlyProcessing = "";
+        UpdateSummary();
+
+        await ScanAndAppend(dialog.FileNames);
     }
 
     [RelayCommand]
@@ -319,6 +410,7 @@ public partial class MainViewModel : ObservableObject
         KeepCount = 0;
         InvestigateCount = 0;
         ReplaceCount = 0;
+        CurrentlyProcessing = "";
         Files.Clear();
         ArtistGroups.Clear();
         _selectionFilter = null;
@@ -339,6 +431,11 @@ public partial class MainViewModel : ObservableObject
             foreach (var vm in vms)
                 Files.Add(vm);
 
+            PopulateArtistGroups();
+            _selectionFilter = null;
+            ApplyFilters();
+            UpdateSummary();
+
             var queue = new ConcurrentQueue<AudioFileViewModel>(vms);
             int processed = 0;
 
@@ -349,6 +446,11 @@ public partial class MainViewModel : ObservableObject
                 {
                     vm.AnalysisStatus = AnalysisStatus.Processing;
 
+                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        CurrentlyProcessing = $"Обработка: {vm.FileName} [{processed + 1}/{TotalFiles}]";
+                    });
+
                     var fileInfo = new AudioFileInfo(vm.FilePath, vm.FileName, 0);
                     var result = await Task.Run(() => _analyzer.Analyze(fileInfo, ct), ct);
 
@@ -358,8 +460,7 @@ public partial class MainViewModel : ObservableObject
                     await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         ProcessedFiles = done;
-                        if (done % 5 == 0 || done == TotalFiles)
-                            Progress = TotalFiles > 0 ? (double)done / TotalFiles * 100.0 : 0;
+                        Progress = TotalFiles > 0 ? (double)done / TotalFiles * 100.0 : 0;
 
                         if (result.AnalysisStatus == AnalysisStatus.Error)
                             ErrorCount++;
@@ -370,16 +471,14 @@ public partial class MainViewModel : ObservableObject
                         else if (result.Decision == "REPLACE")
                             ReplaceCount++;
 
-                        if (done % 5 == 0 || done == TotalFiles)
-                            UpdateSummary();
+                        UpdateSummary();
                     });
-
-
                 }
             });
 
             await Task.WhenAll(tasks);
 
+            CurrentlyProcessing = "";
             PopulateArtistGroups();
             _selectionFilter = null;
             ApplyFilters();
@@ -390,6 +489,7 @@ public partial class MainViewModel : ObservableObject
         {
             IsProcessing = false;
             UpdateSummary();
+            CurrentlyProcessing = "";
             ShowWelcome = Files.Count == 0;
         }
     }
@@ -441,6 +541,11 @@ public partial class MainViewModel : ObservableObject
             foreach (var vm in vms)
                 Files.Add(vm);
 
+            PopulateArtistGroups();
+            _selectionFilter = null;
+            ApplyFilters();
+            UpdateSummary();
+
             var queue = new ConcurrentQueue<AudioFileViewModel>(vms);
             int newTotal = newFileInfos.Count;
             int newProcessed = 0;
@@ -451,7 +556,14 @@ public partial class MainViewModel : ObservableObject
             {
                 while (queue.TryDequeue(out var vm) && !ct.IsCancellationRequested)
                 {
+                    int current = newProcessed + 1;
                     vm.AnalysisStatus = AnalysisStatus.Processing;
+
+                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        CurrentlyProcessing = $"Обработка: {vm.FileName} [{startTotal + current}/{startTotal + newTotal}]";
+                    });
+
                     var fileInfo = new AudioFileInfo(vm.FilePath, vm.FileName, 0);
                     var result = await Task.Run(() => _analyzer.Analyze(fileInfo, ct), ct);
                     vm.ApplyResult(result);
@@ -460,17 +572,18 @@ public partial class MainViewModel : ObservableObject
                     {
                         TotalFiles = startTotal + newProcessed;
                         ProcessedFiles = startTotal + newProcessed;
-                        if (done % 5 == 0 || done == newTotal)
-                            Progress = (double)(startTotal + done) / (startTotal + newTotal) * 100.0;
+                        Progress = (double)(startTotal + done) / (startTotal + newTotal) * 100.0;
                         if (result.AnalysisStatus == AnalysisStatus.Error) ErrorCount++;
                         else if (result.Decision.StartsWith("KEEP")) KeepCount++;
                         else if (result.Decision == "INVESTIGATE") InvestigateCount++;
                         else if (result.Decision == "REPLACE") ReplaceCount++;
-                        if (done % 5 == 0 || done == newTotal) UpdateSummary();
+                        UpdateSummary();
                     });
                 }
             });
             await Task.WhenAll(tasks);
+
+            CurrentlyProcessing = "";
             PopulateArtistGroups();
             _selectionFilter = null;
             ApplyFilters();
@@ -480,6 +593,7 @@ public partial class MainViewModel : ObservableObject
         {
             IsProcessing = false;
             UpdateSummary();
+            CurrentlyProcessing = "";
             ShowWelcome = Files.Count == 0;
         }
     }

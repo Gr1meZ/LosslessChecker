@@ -1,3 +1,4 @@
+using System.Windows;
 using LosslessChecker.Views;
 
 namespace LosslessChecker.Services;
@@ -9,6 +10,8 @@ public class DialogService : IDialogService
     {
         var window = new SpectrogramWindow(rawData, width, height,
             durationSec, sampleRate, cutoffHz, fileName);
+        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
         window.Show();
+        window.Activate();
     }
 }
