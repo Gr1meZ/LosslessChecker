@@ -45,11 +45,23 @@ public partial class MainWindow : Window
     {
         if (_viewModel.SelectedFile == null) return;
 
-        var bmp = _viewModel.SelectedFile.GetOrBuildSpectrogram();
-        if (bmp == null) return;
+        var vm = _viewModel.SelectedFile;
+        var fi = typeof(AudioFileViewModel).GetField("_lastResult",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var lastResult = fi?.GetValue(vm) as Models.AnalysisResult;
 
-        var window = new SpectrogramWindow(bmp, _viewModel.SelectedFile.FileName);
-        window.Owner = this;
-        window.Show();
+        if (lastResult?.SpectrogramFlat is { Length: > 0 })
+        {
+            var window = new SpectrogramWindow(
+                lastResult.SpectrogramFlat,
+                lastResult.SpectrogramWidth,
+                lastResult.SpectrogramHeight,
+                lastResult.DurationSeconds,
+                lastResult.SampleRate,
+                lastResult.CutoffFrequency,
+                vm.FileName);
+            window.Owner = this;
+            window.Show();
+        }
     }
 }
