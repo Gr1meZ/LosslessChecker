@@ -155,12 +155,14 @@ public class AudioAnalyzer
                 SpectrogramHeight = spectroH
             };
 
+            // Classify first — Score() methods need Authenticity set
+            result = result with { Authenticity = _losslessScorer.Classify(result) };
+
             var losslessScore = _losslessScorer.Score(result);
             var hiResScore = _losslessScorer.ScoreHiRes(result);
             var (qualityPercent, decision) = _qualityScorer.Score(result);
             result = result with
             {
-                Authenticity = _losslessScorer.Classify(result),
                 LosslessScore = Math.Round(losslessScore, 1),
                 HiResScore = Math.Round(hiResScore, 1),
                 QualityScorePercent = Math.Round(qualityPercent, 1),
