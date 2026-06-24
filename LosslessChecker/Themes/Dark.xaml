@@ -1,0 +1,17 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="BgPrimaryBrush" Color="#1e1e2e"/>
+    <SolidColorBrush x:Key="BgSecondaryBrush" Color="#313244"/>
+    <SolidColorBrush x:Key="BgTertiaryBrush" Color="#181825"/>
+    <SolidColorBrush x:Key="FgPrimaryBrush" Color="#cdd6f4"/>
+    <SolidColorBrush x:Key="FgSecondaryBrush" Color="#bac2de"/>
+    <SolidColorBrush x:Key="FgMutedBrush" Color="#a6adc8"/>
+    <SolidColorBrush x:Key="FgSubtleBrush" Color="#585b70"/>
+    <SolidColorBrush x:Key="BorderBrush" Color="#45475a"/>
+    <SolidColorBrush x:Key="AccentBrush" Color="#89b4fa"/>
+    <SolidColorBrush x:Key="GridAltRowBrush" Color="#242438"/>
+    <SolidColorBrush x:Key="LosslessGreenBrush" Color="#2EA043"/>
+    <SolidColorBrush x:Key="SuspiciousAmberBrush" Color="#D29922"/>
+    <SolidColorBrush x:Key="FakeRedBrush" Color="#CF222E"/>
+    <SolidColorBrush x:Key="NeutralGrayBrush" Color="#808080"/>
+</ResourceDictionary>
