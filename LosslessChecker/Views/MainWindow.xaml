@@ -139,7 +139,7 @@
                     </DataGridTextColumn>
                     <DataGridTextColumn Header="Формат" Binding="{Binding Format}" Width="100"/>
                     <DataGridTextColumn Header="Срез" Binding="{Binding CutoffFrequency, StringFormat={}{0:F0} Гц}" Width="70"/>
-                    <DataGridTextColumn Header="DR" Binding="{Binding DynamicRange, StringFormat={}{0:F1}}" Width="45"/>
+                    <DataGridTextColumn Header="DR" Binding="{Binding DynamicRange, StringFormat={}{0:F0}}" Width="45"/>
                     <DataGridTextColumn Header="TPeak" Binding="{Binding TruePeakDb, StringFormat={}{0:F1}}" Width="50"/>
                     <DataGridTextColumn Header="Клип" Binding="{Binding ClippingPercent, StringFormat={}{0:F2}}" Width="50"/>
                     <DataGridTextColumn Header="Аутентичность" Binding="{Binding Authenticity}" Width="105">

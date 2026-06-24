@@ -17,7 +17,7 @@ public class DrMeter
         int blockSize = (int)(sampleRate * BlockSec);
         int numBlocks = samples.Length / blockSize;
         double clipPct = numBlocks > 0 ? ComputeClipping(samples, blockSize, numBlocks) : 0;
-        return (Math.Round(dr, 1), Math.Round(peak, 1), Math.Round(clipPct, 2));
+        return (Math.Round(dr, 0), Math.Round(peak, 1), Math.Round(clipPct, 2));
     }
 
     /// <summary>TT DR Meter per ITU spec: per-channel DR, official = min(L,R)</summary>
@@ -47,7 +47,7 @@ public class DrMeter
         double clipPct = ComputeClipping(mono, blockSize, numBlocks);
 
         return new DrResult(
-            Math.Round(officialDr, 1), Math.Round(drL, 1), Math.Round(drR, 1),
+            Math.Round(officialDr, 0), Math.Round(drL, 0), Math.Round(drR, 0),
             Math.Round(overallPeak, 1), Math.Round(clipPct, 2));
     }
 
