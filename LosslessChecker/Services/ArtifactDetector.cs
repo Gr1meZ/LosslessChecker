@@ -95,17 +95,23 @@ public class ArtifactDetector
         double avgFlatness = totalFlatness / frameCount;
         double avgSlope = totalSlope / frameCount;
 
+        // If cutoff is near Nyquist (>95%), there's not enough HF spectrum
+        // to reliably detect artifacts — skip to avoid false positives
+        double cutoffRatio = cutoffFrequency / (sampleRate / 2.0);
+        if (cutoffRatio > 0.95)
+            return (false, "None", "None");
+
         // avgSlope is dB/bin. Negative = energy drops above cutoff.
-        // Steep drop (avgSlope < -0.08 dB/bin) = brickwall = MP3 artifact
+        // Steep drop (avgSlope < -0.12 dB/bin) = brickwall = MP3 artifact
         // Flat (avgSlope > -0.02 dB/bin) = natural rolloff or noise
 
         bool hasArtifacts;
         string level;
-        if (avgFlatness > 0.4 && avgSlope < -0.1)
+        if (avgFlatness > 0.5 && avgSlope < -0.12)
             (hasArtifacts, level) = (true, "Strong");
-        else if (avgFlatness > 0.25 && avgSlope < -0.06)
+        else if (avgFlatness > 0.35 && avgSlope < -0.08)
             (hasArtifacts, level) = (true, "Medium");
-        else if (avgFlatness > 0.1 || avgSlope < -0.04)
+        else if (avgFlatness > 0.2 || avgSlope < -0.06)
             (hasArtifacts, level) = (true, "Weak");
         else
             (hasArtifacts, level) = (false, "None");

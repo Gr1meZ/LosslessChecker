@@ -400,25 +400,47 @@ public partial class AudioFileViewModel : ObservableObject
         // === Group: Итоговая оценка ===
         items.Add(new MetricItem { Name = "Итоговая оценка", IsHeader = true });
 
-        // Authenticity
-        string authStatus = r.Authenticity switch
-        {
-            "TRUE LOSSLESS" => "✓ Настоящий lossless",
-            "SUSPICIOUS" => "⚠ Подозрительный",
-            "FAKE LOSSLESS" => "✗ Фейк (пережат из lossy)",
-            "FAKE HI-RES" => "✗ Фейк Hi-Res (апскейл из CD)",
-            _ => r.Authenticity
-        };
-        string authColor = r.Authenticity.StartsWith("TRUE") ? "#2EA043" : r.Authenticity.StartsWith("SUSPICIOUS") ? "#D29922" : "#CF222E";
+        // Lossless Score
+        string losslessStatus = r.LosslessScore >= 85 ? "✓ Отлично" : r.LosslessScore >= 60 ? "⚠ Средне" : "✗ Плохо";
+        string losslessColor = r.LosslessScore >= 85 ? "#2EA043" : r.LosslessScore >= 60 ? "#D29922" : "#CF222E";
         items.Add(new MetricItem
         {
             Category = "Итог",
-            Name = "Аутентичность",
-            Value = authStatus,
-            Status = r.Authenticity switch { "TRUE LOSSLESS" => "✓ Подлинный", "SUSPICIOUS" => "⚠ Проверить", _ => "✗ Заменить" },
-            StatusColor = authColor,
-            Description = "Определяет, является ли файл настоящим lossless (рип с CD/винила/студии) или пережат из lossy-источника (MP3, AAC). Основано на частотном срезе, артефактах, битовой глубине.",
-            Typical = "TRUE LOSSLESS — можно оставлять\nSUSPICIOUS — проверьте вручную\nFAKE LOSSLESS — ищите оригинал"
+            Name = "Подлинность Lossless",
+            Value = $"{r.LosslessScore:F0}%",
+            Status = losslessStatus,
+            StatusColor = losslessColor,
+            Description = "Оценка подлинности lossless-файла (0–100%). Учитывает частотный срез, артефакты сжатия, характер спада, битовую глубину, апскейл. Высокий % = настоящий рип с CD/винила/студии.",
+            Typical = "85–100% — настоящий lossless\n60–84% — подозрительный\n<60% — фейк, пережат из lossy"
+        });
+
+        // Hi-Res Score (only for Hi-Res files)
+        if (r.HiResScore > 0 || r.SampleRate >= 88200)
+        {
+            string hrStatus = r.HiResScore >= 70 ? "✓ Настоящий Hi-Res" : r.HiResScore >= 40 ? "⚠ Сомнительно" : "✗ Апскейл";
+            string hrColor = r.HiResScore >= 70 ? "#2EA043" : r.HiResScore >= 40 ? "#D29922" : "#CF222E";
+            items.Add(new MetricItem
+            {
+                Category = "Итог",
+                Name = "Подлинность Hi-Res",
+                Value = r.SampleRate >= 88200 ? $"{r.HiResScore:F0}%" : "—",
+                Status = hrStatus,
+                StatusColor = hrColor,
+                Description = "Оценка подлинности Hi-Res (0–100%). Проверяет наличие реального ультразвукового контента выше 22 кГц. Только для файлов ≥88.2 кГц.",
+                Typical = "70–100% — настоящий Hi-Res\n40–69% — сомнительно\n<40% — апскейл из CD"
+            });
+        }
+
+        // Metrics Coverage
+        items.Add(new MetricItem
+        {
+            Category = "Итог",
+            Name = "Охват метрик",
+            Value = $"{r.MetricsCoverage:F0}%",
+            Status = r.MetricsCoverage >= 80 ? "✓ Хорошо" : r.MetricsCoverage >= 60 ? "⚠ Средне" : "✗ Мало",
+            StatusColor = r.MetricsCoverage >= 80 ? "#2EA043" : r.MetricsCoverage >= 60 ? "#D29922" : "#CF222E",
+            Description = "Процент метрик, прошедших пороговые значения. Показывает, насколько 'чист' файл по всем проверкам. 100% — все метрики в норме.",
+            Typical = "80–100% — отлично\n60–79% — есть замечания\n<60% — много проблем"
         });
 
         // Quality
@@ -431,8 +453,8 @@ public partial class AudioFileViewModel : ObservableObject
             Value = $"{r.QualityScorePercent:F0}%",
             Status = qualStatus,
             StatusColor = qualColor,
-            Description = "Оценка качества мастеринга от 1 до 10. Учитывает DR, клиппинг, True Peak, LUFS, DC Offset, фазу. НЕ влияет на аутентичность: даже плохо смастеренный файл может быть настоящим lossless.",
-            Typical = "7–10 — отличный мастеринг\n4–6 — средний мастеринг\n1–3 — плохой мастеринг"
+            Description = "Взвешенная оценка качества мастеринга (0–100%). DR (вес 25), клиппинг (20), True Peak (13), LUFS (15), DC Offset (8), фаза (12), битность (5).",
+            Typical = "70–100% — отличный мастеринг\n40–69% — средний мастеринг\n<40% — плохой мастеринг"
         });
 
         // Decision
@@ -452,7 +474,7 @@ public partial class AudioFileViewModel : ObservableObject
             Value = decText,
             Status = decText,
             StatusColor = decColor,
-            Description = "Рекомендация: ОСТАВИТЬ — файл подлинный, качество приемлемо. ПРОВЕРИТЬ — подозрительный, проверьте вручную. ЗАМЕНИТЬ — фейк, ищите оригинал. Настоящий lossless НИКОГДА не получит 'ЗАМЕНИТЬ', даже с плохим мастерингом.",
+            Description = "Рекомендация: ОСТАВИТЬ — файл подлинный, качество приемлемо. ПРОВЕРИТЬ — подозрительный. ЗАМЕНИТЬ — фейк. Настоящий lossless НИКОГДА не получит 'ЗАМЕНИТЬ'.",
             Typical = "ОСТАВИТЬ / ПРОВЕРИТЬ / ЗАМЕНИТЬ"
         });
 

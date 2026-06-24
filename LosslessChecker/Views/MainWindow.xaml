@@ -229,7 +229,7 @@
                     <DataGridTextColumn Header="Формат" Binding="{Binding Format}" Width="60"/>
                     <DataGridTextColumn Header="Cutoff" Binding="{Binding CutoffFrequency, StringFormat={}{0:F0} Гц}" Width="60"/>
                     <DataGridTextColumn Header="DR" Binding="{Binding DynamicRange, StringFormat={}{0:F0}}" Width="40"/>
-                    <DataGridTextColumn Header="Аутентичность" Binding="{Binding Authenticity}" Width="100">
+                    <DataGridTextColumn Header="Подлинность" Binding="{Binding Authenticity}" Width="100">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Foreground" Value="{Binding Authenticity, Converter={StaticResource AuthToColor}}"/>
@@ -399,7 +399,7 @@
                                 </TextBlock.Style>
                             </TextBlock>
                             <TextBlock FontSize="11" Foreground="#a6adc8">
-                                <Run Text="Аутентичность: "/>
+                                <Run Text="Подлинность: "/>
                                 <Run Text="{Binding SelectedFile.Authenticity}" FontWeight="Bold"
                                      Foreground="{Binding SelectedFile.Authenticity, Converter={StaticResource AuthToColor}}"/>
                                 <Run Text=" | Качество: "/>
