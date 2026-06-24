@@ -7,7 +7,7 @@ public class DrMeter
     private const double BlockSec = 3.0;
     private const double TopPct = 0.20;
     private const double TrimPct = 0.10;
-    private const double CalibrationDb = 3.0; // foobar2000 RMS is ~3dB higher than our time-domain measurement
+    private const double CalibrationDb = 2.65; // averaged: 3.1 for compressed, 2.2 for dynamic → match foobar2000
     private const int ClipRunMin = 3;
 
     /// <summary>Legacy: mono DR + clipping for tests</summary>
