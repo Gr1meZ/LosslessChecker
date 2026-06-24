@@ -397,6 +397,43 @@ public partial class AudioFileViewModel : ObservableObject
             Typical = "1 — моно\n2 — стерео"
         });
 
+        if (r.Mp3Bitrate > 0)
+        {
+            items.Add(new MetricItem { Name = "Характеристики MP3", IsHeader = true });
+            items.Add(new MetricItem
+            {
+                Category = "MP3",
+                Name = "Битрейт",
+                Value = $"{r.Mp3Bitrate} kbps",
+                Status = "—",
+                StatusColor = "#585b70",
+                Description = "Заявленный битрейт MP3-файла из заголовка."
+            });
+            if (r.Mp3Encoder.Length > 0 && r.Mp3Encoder != "Error")
+            {
+                items.Add(new MetricItem
+                {
+                    Category = "MP3",
+                    Name = "Кодер",
+                    Value = r.Mp3Encoder,
+                    Status = "—",
+                    StatusColor = "#585b70",
+                    Description = "Идентифицированный MP3-кодер (LAME, FhG, etc)."
+                });
+            }
+            string mp3QualStatus = r.Mp3QualityScore >= 80 ? "✓ Хороший рип" : r.Mp3QualityScore >= 50 ? "⚠ Средний" : "✗ Плохой";
+            string mp3QualColor = r.Mp3QualityScore >= 80 ? "#2EA043" : r.Mp3QualityScore >= 50 ? "#D29922" : "#CF222E";
+            items.Add(new MetricItem
+            {
+                Category = "MP3",
+                Name = "Качество MP3",
+                Value = $"{r.Mp3QualityScore:F0}%",
+                Status = mp3QualStatus,
+                StatusColor = mp3QualColor,
+                Description = "Оценка качества MP3-рипа: соответствие среза битрейту, артефакты, спектральные дыры."
+            });
+        }
+
         // === Group: Итоговая оценка ===
         items.Add(new MetricItem { Name = "Итоговая оценка", IsHeader = true });
 

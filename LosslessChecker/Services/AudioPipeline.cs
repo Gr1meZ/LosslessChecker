@@ -61,6 +61,20 @@ public class AudioPipeline
                 };
             }
 
+            int mp3Bitrate = 0;
+            string mp3Encoder = "";
+            if (fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    using var mp3Reader = new NAudio.Wave.Mp3FileReader(fileInfo.FilePath);
+                    mp3Bitrate = mp3Reader.Mp3WaveFormat.AverageBytesPerSecond * 8 / 1000;
+                    var xingHeader = mp3Reader.XingHeader;
+                    mp3Encoder = xingHeader != null ? "LAME" : "Unknown";
+                }
+                catch { mp3Encoder = "Error"; }
+            }
+
             if (ct.IsCancellationRequested) return Cancelled(result);
 
             var buffer = AudioDecoder.Decode(fileInfo.FilePath, ct);
@@ -169,10 +183,18 @@ public class AudioPipeline
                 ResamplingVerdict = resamplingResult.Verdict,
                 SpectrogramFlat = spectroData,
                 SpectrogramWidth = spectroW,
-                SpectrogramHeight = spectroH
+                SpectrogramHeight = spectroH,
+                Mp3Bitrate = mp3Bitrate,
+                Mp3Encoder = mp3Encoder
             };
 
             result = result with { Authenticity = _losslessScorer.Classify(result) };
+
+            double mp3QualityScore = 0;
+            if (fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) && mp3Bitrate > 0)
+            {
+                mp3QualityScore = ComputeMp3Quality(cutoffHz, sampleRate, mp3Bitrate, artifactLevel, hasSpectralHoles);
+            }
 
             var losslessScore = _losslessScorer.Score(result);
             var hiResScore = _losslessScorer.ScoreHiRes(result);
@@ -186,7 +208,8 @@ public class AudioPipeline
                 MetricsCoverage = ComputeMetricsCoverage(result),
                 Decision = decision,
                 StructuredReport = _verdict.Generate(result),
-                AnalysisStatus = AnalysisStatus.Completed
+                AnalysisStatus = AnalysisStatus.Completed,
+                Mp3QualityScore = mp3QualityScore
             };
 
             return result;
@@ -222,6 +245,36 @@ public class AudioPipeline
     {
         var ext = Path.GetExtension(filePath).ToUpperInvariant().TrimStart('.');
         return $"{ext} {sampleRate / 1000.0:F0}kHz/{bitDepth}bit";
+    }
+
+    private static double ComputeMp3Quality(double cutoffHz, int sampleRate, int bitrate,
+        string artifactLevel, bool hasSpectralHoles)
+    {
+        double score = 100;
+
+        double expectedCutoff = bitrate switch
+        {
+            >= 320 => 20500,
+            >= 256 => 19000,
+            >= 192 => 18000,
+            >= 128 => 16500,
+            _ => 16000
+        };
+
+        if (cutoffHz < expectedCutoff * 0.8) score -= 40;
+        else if (cutoffHz < expectedCutoff * 0.9) score -= 20;
+        else if (cutoffHz < expectedCutoff) score -= 5;
+
+        if (bitrate >= 256 && cutoffHz < 18000) score -= 30;
+        if (bitrate >= 192 && cutoffHz < 16000) score -= 25;
+
+        if (artifactLevel == "Strong") score -= 25;
+        else if (artifactLevel == "Medium") score -= 12;
+        else if (artifactLevel == "Weak") score -= 5;
+
+        if (hasSpectralHoles) score -= 15;
+
+        return Math.Max(0, Math.Min(100, score));
     }
 
     private static double ComputeOverallRms(float[] mono)
