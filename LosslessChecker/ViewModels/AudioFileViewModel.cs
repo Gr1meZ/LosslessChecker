@@ -208,8 +208,26 @@ public partial class AudioFileViewModel : ObservableObject
 
         // Cutoff
         var cutoffRatio = nyquist > 0 ? r.CutoffFrequency / nyquist : 1.0;
-        string cutoffStatus = cutoffRatio >= 0.95 ? "✓ Отлично" : cutoffRatio >= 0.85 ? "⚠ Подозрительно" : "✗ Плохо";
-        string cutoffColor = cutoffRatio >= 0.95 ? "#2EA043" : cutoffRatio >= 0.85 ? "#D29922" : "#CF222E";
+        bool isHiRes = r.SampleRate >= 88200;
+        string cutoffStatus;
+        string cutoffColor;
+        string cutoffTypical;
+        if (isHiRes)
+        {
+            cutoffStatus = r.CutoffFrequency > 22100 ? "✓ Отлично"
+                : r.CutoffFrequency > 20000 ? "⚠ Подозрительно"
+                : "✗ Плохо";
+            cutoffColor = r.CutoffFrequency > 22100 ? "#2EA043"
+                : r.CutoffFrequency > 20000 ? "#D29922"
+                : "#CF222E";
+            cutoffTypical = ">22 кГц — отлично (настоящий Hi-Res)\n20–22 кГц — подозрительно (возможен CD-апскейл)\n<20 кГц — плохо (апскейл из lossy)";
+        }
+        else
+        {
+            cutoffStatus = cutoffRatio >= 0.95 ? "✓ Отлично" : cutoffRatio >= 0.85 ? "⚠ Подозрительно" : "✗ Плохо";
+            cutoffColor = cutoffRatio >= 0.95 ? "#2EA043" : cutoffRatio >= 0.85 ? "#D29922" : "#CF222E";
+            cutoffTypical = ">95% Найквиста — отлично\n85–95% — подозрительно (возможен MP3 320)\n<85% — точно сжато (MP3 128-256)";
+        }
         items.Add(new MetricItem
         {
             Category = "Спектр",
@@ -218,7 +236,7 @@ public partial class AudioFileViewModel : ObservableObject
             Status = cutoffStatus,
             StatusColor = cutoffColor,
             Description = "Максимальная частота, выше которой сигнал отсутствует. Настоящий lossless сохраняет полный спектр до частоты Найквиста. Lossy-кодеки (MP3, AAC) обрезают высокие частоты для экономии места.",
-            Typical = ">95% Найквиста — отлично\n85–95% — подозрительно (возможен MP3 320)\n<85% — точно сжато (MP3 128-256)"
+            Typical = cutoffTypical
         });
 
         // Shelf type
@@ -231,13 +249,23 @@ public partial class AudioFileViewModel : ObservableObject
                 "Natural" => "Естественный спад",
                 _ => r.ShelfType
             };
-            string shelfColor = r.ShelfType == "Natural" ? "#2EA043" : r.ShelfType == "Filtered" ? "#D29922" : "#CF222E";
+            // Hi-Res: "Filtered" above 22kHz is normal mastering LP, not suspicious
+            string shelfStatus;
+            string shelfColor;
+            if (r.ShelfType == "Natural")
+                (shelfStatus, shelfColor) = ("✓ Хорошо", "#2EA043");
+            else if (r.ShelfType == "Filtered" && isHiRes && r.CutoffFrequency > 22100)
+                (shelfStatus, shelfColor) = ("✓ Ок", "#2EA043");
+            else if (r.ShelfType == "Filtered")
+                (shelfStatus, shelfColor) = ("⚠ Подозрительно", "#D29922");
+            else
+                (shelfStatus, shelfColor) = ("✗ Плохо", "#CF222E");
             items.Add(new MetricItem
             {
                 Category = "Спектр",
                 Name = "Характер спада",
                 Value = shelfLabel,
-                Status = r.ShelfType == "Natural" ? "✓ Хорошо" : r.ShelfType == "Filtered" ? "⚠ Подозрительно" : "✗ Плохо",
+                Status = shelfStatus,
                 StatusColor = shelfColor,
                 Description = "Форма спектра выше частоты среза. Резкая 'кирпичная стена' — признак lossy-кодека. Плавный естественный спад — аналоговая запись или качественный цифровой трансфер.",
                 Typical = "Естественный — отлично\nФильтрованный — подозрительно\nКирпичная стена — сжато"
@@ -247,13 +275,14 @@ public partial class AudioFileViewModel : ObservableObject
         // Encoder match
         if (r.EncoderMatch != "None" && r.EncoderMatch.Length > 0)
         {
+            bool isHiResMatch = r.EncoderMatch == "None (Hi-Res)";
             items.Add(new MetricItem
             {
                 Category = "Спектр",
                 Name = "Соответствие кодека",
                 Value = r.EncoderMatch,
-                Status = "⚠ Обнаружено",
-                StatusColor = "#D29922",
+                Status = isHiResMatch ? "✓ Настоящий" : "⚠ Обнаружено",
+                StatusColor = isHiResMatch ? "#2EA043" : "#D29922",
                 Description = "Частота среза сопоставлена с известными кодеками. Каждый lossy-кодек имеет характерную частоту среза.",
                 Typical = "MP3 128 → 16 кГц\nMP3 256 → 18 кГц\nMP3 320 / AAC → 20 кГц"
             });
