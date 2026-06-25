@@ -13,27 +13,48 @@ public class LosslessScorer
         double score = 100;
         var nyquist = r.SampleRate / 2.0;
         double ratio = nyquist > 0 ? r.CutoffFrequency / nyquist : 1.0;
+        bool isHiRes = r.SampleRate >= 88200;
 
         // Cutoff penalty: only for non-natural shelves.
         // Natural rolloff (ADC anti-aliasing) is NORMAL — no penalty.
+        // For Hi-Res files (>=88.2kHz): use absolute cutoff thresholds.
+        // Real music rarely exceeds 40kHz, so ratio-to-Nyquist is misleading.
         if (r.ShelfType == "Brickwall")
         {
-            if (ratio < 0.65) score -= 60;
-            else if (ratio < 0.75) score -= 55;
-            else if (ratio < 0.85) score -= 35;
-            else if (ratio < 0.90) score -= 20;
-            else if (ratio < 0.95) score -= 8;
+            if (isHiRes)
+            {
+                if (r.CutoffFrequency < 22000) score -= 60;
+                else if (r.CutoffFrequency < 30000) score -= 30;
+                else if (r.CutoffFrequency < 40000) score -= 10;
+            }
+            else
+            {
+                if (ratio < 0.65) score -= 60;
+                else if (ratio < 0.75) score -= 55;
+                else if (ratio < 0.85) score -= 35;
+                else if (ratio < 0.90) score -= 20;
+                else if (ratio < 0.95) score -= 8;
+            }
         }
         else if (r.ShelfType == "Filtered")
         {
-            if (ratio < 0.75) score -= 40;
-            else if (ratio < 0.85) score -= 20;
-            else if (ratio < 0.90) score -= 8;
+            if (isHiRes)
+            {
+                if (r.CutoffFrequency < 22000) score -= 30;
+                else if (r.CutoffFrequency < 30000) score -= 10;
+            }
+            else
+            {
+                if (ratio < 0.75) score -= 40;
+                else if (ratio < 0.85) score -= 20;
+                else if (ratio < 0.90) score -= 8;
+            }
         }
 
         // Artifact penalty: only significant when paired with brickwall or suspicious cutoff
-        if (r.ArtifactLevel == "Strong" && (r.ShelfType == "Brickwall" || ratio < 0.85)) score -= _p.ArtifactStrongPenalty;
-        else if (r.ArtifactLevel == "Medium" && (r.ShelfType == "Brickwall" || ratio < 0.85)) score -= _p.ArtifactMediumPenalty;
+        bool isSuspiciousCutoff = isHiRes ? r.CutoffFrequency < 30000 : ratio < 0.85;
+        if (r.ArtifactLevel == "Strong" && (r.ShelfType == "Brickwall" || isSuspiciousCutoff)) score -= _p.ArtifactStrongPenalty;
+        else if (r.ArtifactLevel == "Medium" && (r.ShelfType == "Brickwall" || isSuspiciousCutoff)) score -= _p.ArtifactMediumPenalty;
         else if (r.ArtifactLevel == "Weak") score -= _p.ArtifactWeakPenalty;
 
         if (r.LsbZeroPadded) score -= _p.LsbZeroPadPenalty;
@@ -54,6 +75,7 @@ public class LosslessScorer
         else if (r.MaxHfDb < _p.HfDbMedium) score -= _p.HfMediumPenalty;
 
         if (r.CutoffFrequency < 22000) score -= _p.CutoffBelow22kPenalty;
+        else if (r.CutoffFrequency < 30000) score -= _p.CutoffBelow22kPenalty / 2;
         if (r.IsUpscale) score -= _p.HiResUpscalePenalty;
 
         return Math.Max(0, Math.Min(100, score));

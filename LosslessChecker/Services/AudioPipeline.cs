@@ -95,6 +95,15 @@ public class AudioPipeline
             double duration = buffer.Length / (double)buffer.SampleRate;
             result = result with { DurationSeconds = Math.Round(duration, 1) };
 
+            int actualBitrate = 0;
+            try
+            {
+                long fileSize = new System.IO.FileInfo(fileInfo.FilePath).Length;
+                if (duration > 0)
+                    actualBitrate = (int)(fileSize * 8.0 / (duration * 1000.0));
+            }
+            catch { }
+
             if (duration < 5.0)
             {
                 return result with
@@ -202,7 +211,8 @@ public class AudioPipeline
                 Mp3Bitrate = mp3Bitrate,
                 Mp3Encoder = mp3Encoder,
                 AacBitrate = aacBitrate,
-                IsAac = isAac
+                IsAac = isAac,
+                ActualBitrate = actualBitrate
             };
 
             bool isMp3 = fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
@@ -210,13 +220,13 @@ public class AudioPipeline
             double mp3QualityScore = 0;
             if (isMp3 && mp3Bitrate > 0)
             {
-                mp3QualityScore = ComputeMp3Quality(cutoffHz, sampleRate, mp3Bitrate, artifactLevel, hasSpectralHoles);
+                mp3QualityScore = ComputeMp3Quality(cutoffHz, sampleRate, mp3Bitrate, actualBitrate, artifactLevel, hasSpectralHoles);
             }
 
             double aacQualityScore = 0;
             if (isAac && aacBitrate > 0)
             {
-                aacQualityScore = ComputeAacQuality(cutoffHz, sampleRate, aacBitrate, artifactLevel, hasSpectralHoles);
+                aacQualityScore = ComputeAacQuality(cutoffHz, sampleRate, aacBitrate, actualBitrate, artifactLevel, hasSpectralHoles);
             }
 
             if (isMp3)
@@ -319,7 +329,7 @@ public class AudioPipeline
         return $"{ext} {sampleRate / 1000.0:F0}kHz/{bitDepth}bit";
     }
 
-    private static double ComputeMp3Quality(double cutoffHz, int sampleRate, int bitrate,
+    private static double ComputeMp3Quality(double cutoffHz, int sampleRate, int bitrate, int actualBitrate,
         string artifactLevel, bool hasSpectralHoles)
     {
         double score = 100;
@@ -340,6 +350,14 @@ public class AudioPipeline
         if (bitrate >= 256 && cutoffHz < 18000) score -= 30;
         if (bitrate >= 192 && cutoffHz < 16000) score -= 25;
 
+        if (actualBitrate > 0 && bitrate > 0)
+        {
+            double ratio = (double)bitrate / actualBitrate;
+            if (ratio > 2.5) score -= 40;
+            else if (ratio > 1.5) score -= 20;
+            else if (ratio > 1.2) score -= 8;
+        }
+
         if (artifactLevel == "Strong") score -= 25;
         else if (artifactLevel == "Medium") score -= 12;
         else if (artifactLevel == "Weak") score -= 5;
@@ -349,7 +367,7 @@ public class AudioPipeline
         return Math.Max(0, Math.Min(100, score));
     }
 
-    private static double ComputeAacQuality(double cutoffHz, int sampleRate, int bitrate,
+    private static double ComputeAacQuality(double cutoffHz, int sampleRate, int bitrate, int actualBitrate,
         string artifactLevel, bool hasSpectralHoles)
     {
         double score = 100;
@@ -367,6 +385,14 @@ public class AudioPipeline
         else if (cutoffHz < expectedCutoff) score -= 5;
 
         if (bitrate >= 192 && cutoffHz < 16000) score -= 25;
+
+        if (actualBitrate > 0 && bitrate > 0)
+        {
+            double ratio = (double)bitrate / actualBitrate;
+            if (ratio > 2.5) score -= 40;
+            else if (ratio > 1.5) score -= 20;
+            else if (ratio > 1.2) score -= 8;
+        }
 
         if (artifactLevel == "Strong") score -= 25;
         else if (artifactLevel == "Medium") score -= 12;

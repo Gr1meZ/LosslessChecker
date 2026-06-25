@@ -87,6 +87,8 @@ public record AnalysisResult
     public int AacBitrate { get; init; }
     public bool IsAac { get; init; }
 
+    public int ActualBitrate { get; init; }
+
     public string WhyVerdict { get; init; } = "";
 
     public AnalysisStatus AnalysisStatus { get; init; } = AnalysisStatus.Pending;

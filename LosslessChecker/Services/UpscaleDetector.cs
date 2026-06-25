@@ -18,9 +18,22 @@ public class UpscaleDetector
         if (startBin >= averagedSpectrum.Length || startBin < 1)
             return (false, "Insufficient bins for HF analysis.", 0);
 
+        // Use midrange (5-15kHz) as reference instead of bass (0-startBin/2).
+        // A loud kick drum at 50Hz dominates bass energy and makes HF look artificially quiet.
+        // Midrange gives a fair baseline for comparing HF content.
+        int refStartBin = (int)(5000.0 / nyquist * averagedSpectrum.Length);
+        int refEndBin = Math.Min(startBin, (int)(15000.0 / nyquist * averagedSpectrum.Length));
+        if (refStartBin < 1) refStartBin = 1;
+        if (refEndBin <= refStartBin) refEndBin = Math.Min(startBin, averagedSpectrum.Length);
+
         double peakBelow = 0;
-        for (int i = 0; i < startBin / 2; i++)
+        for (int i = refStartBin; i < refEndBin; i++)
             peakBelow = Math.Max(peakBelow, averagedSpectrum[i]);
+
+        // Fallback to wider range if midrange is silent
+        if (peakBelow <= 0)
+            for (int i = 1; i < startBin; i++)
+                peakBelow = Math.Max(peakBelow, averagedSpectrum[i]);
 
         double maxHf = 0;
         for (int i = startBin; i < averagedSpectrum.Length; i++)

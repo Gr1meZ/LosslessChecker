@@ -52,16 +52,56 @@ public partial class AudioFileViewModel : ObservableObject
 
     public int AacBitrate { get; private set; }
     public bool IsAac { get; private set; }
+    public int ActualBitrate { get; private set; }
+
+    public string BitrateDisplay
+    {
+        get
+        {
+            var headerBr = Mp3Bitrate > 0 ? Mp3Bitrate : AacBitrate > 0 ? AacBitrate : 0;
+            if (headerBr > 0 && ActualBitrate > 0)
+                return $"{headerBr}→{ActualBitrate}";
+            if (ActualBitrate > 0)
+                return $"{ActualBitrate}";
+            if (headerBr > 0)
+                return $"{headerBr}";
+            return "—";
+        }
+    }
+
+    public System.Windows.Media.Brush BitrateColor
+    {
+        get
+        {
+            var headerBr = Mp3Bitrate > 0 ? Mp3Bitrate : AacBitrate > 0 ? AacBitrate : 0;
+            if (headerBr <= 0 || ActualBitrate <= 0)
+                return System.Windows.Application.Current.TryFindResource("FgMutedBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.Gray;
+
+            double ratio = (double)headerBr / ActualBitrate;
+            if (ratio > 2.5)
+                return System.Windows.Application.Current.TryFindResource("FakeRedBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.Red;
+            if (ratio > 1.5)
+                return System.Windows.Application.Current.TryFindResource("SuspiciousAmberBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.Orange;
+            if (ratio > 1.1 || ratio < 0.9)
+                return System.Windows.Application.Current.TryFindResource("SuspiciousAmberBrush") as System.Windows.Media.Brush
+                    ?? System.Windows.Media.Brushes.Orange;
+            return System.Windows.Application.Current.TryFindResource("LosslessGreenBrush") as System.Windows.Media.Brush
+                ?? System.Windows.Media.Brushes.Green;
+        }
+    }
 
     public string VerdictLabel => Decision switch
     {
         "KEEP" => SampleRate >= 88200 && HiResScorePercent >= 70 ? "HI-RES" : "LOSSLESS",
         "KEEP (poor master)" => "LOSSLESS",
         "INVESTIGATE" => "NOT SURE",
-        "REPLACE" => Format.StartsWith("MP3", StringComparison.OrdinalIgnoreCase) && Mp3Bitrate > 0
-            ? $"MP3 {Mp3Bitrate}"
+        "REPLACE" => Mp3Bitrate > 0
+            ? $"MP3 {(ActualBitrate > 0 ? ActualBitrate : Mp3Bitrate)}"
             : IsAac && AacBitrate > 0
-                ? $"AAC {AacBitrate}"
+                ? $"AAC {(ActualBitrate > 0 ? ActualBitrate : AacBitrate)}"
                 : "REPLACE",
         _ => Decision
     };
@@ -136,6 +176,7 @@ public partial class AudioFileViewModel : ObservableObject
         Mp3Bitrate = r.Mp3Bitrate;
         AacBitrate = r.AacBitrate;
         IsAac = r.IsAac;
+        ActualBitrate = r.ActualBitrate;
 
         if (r.SpectrogramDb is { Length: > 0 })
         {
