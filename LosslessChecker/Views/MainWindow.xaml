@@ -277,18 +277,19 @@
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="Формат" Binding="{Binding Format}" Width="60"
                                        SortMemberPath="Format"/>
-                    <DataGridTemplateColumn Header="Битрейт" Width="70"
-                                            SortMemberPath="ActualBitrate">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding BitrateDisplay}"
-                                           FontSize="10" FontFamily="Consolas"
-                                           Foreground="{Binding BitrateColor}"
-                                           HorizontalAlignment="Center"
-                                           ToolTip="Заявленный → Реальный (kbps)"/>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="Битрейт" Binding="{Binding ClaimedBitrate}" Width="52"
+                                       SortMemberPath="Mp3Bitrate"/>
+                    <DataGridTextColumn Header="Факт." Binding="{Binding ActualBitrateDisplay}" Width="42"
+                                       SortMemberPath="ActualBitrate">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{Binding BitrateDiscrepancyColor}"/>
+                                <Setter Property="FontFamily" Value="Consolas"/>
+                                <Setter Property="FontSize" Value="10"/>
+                                <Setter Property="HorizontalAlignment" Value="Center"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
                     <DataGridTextColumn Header="Cutoff" Binding="{Binding CutoffFrequency, StringFormat={}{0:F0} Гц}" Width="60"
                                        SortMemberPath="CutoffFrequency"/>
                     <DataGridTextColumn Header="DR" Binding="{Binding DynamicRange, StringFormat={}{0:F0}}" Width="40"

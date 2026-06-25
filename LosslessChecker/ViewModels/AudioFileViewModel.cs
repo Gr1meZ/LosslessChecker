@@ -54,22 +54,18 @@ public partial class AudioFileViewModel : ObservableObject
     public bool IsAac { get; private set; }
     public int ActualBitrate { get; private set; }
 
-    public string BitrateDisplay
+    public string ClaimedBitrate
     {
         get
         {
-            var headerBr = Mp3Bitrate > 0 ? Mp3Bitrate : AacBitrate > 0 ? AacBitrate : 0;
-            if (headerBr > 0 && ActualBitrate > 0)
-                return $"{headerBr}→{ActualBitrate}";
-            if (ActualBitrate > 0)
-                return $"{ActualBitrate}";
-            if (headerBr > 0)
-                return $"{headerBr}";
-            return "—";
+            var br = Mp3Bitrate > 0 ? Mp3Bitrate : AacBitrate > 0 ? AacBitrate : 0;
+            return br > 0 ? $"{br}" : "—";
         }
     }
 
-    public System.Windows.Media.Brush BitrateColor
+    public string ActualBitrateDisplay => ActualBitrate > 0 ? $"{ActualBitrate}" : "—";
+
+    public System.Windows.Media.Brush BitrateDiscrepancyColor
     {
         get
         {
