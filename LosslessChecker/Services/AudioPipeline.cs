@@ -71,6 +71,24 @@ public class AudioPipeline
                 catch { mp3Encoder = "Error"; }
             }
 
+            int aacBitrate = 0;
+            bool isAac = false;
+            if (fileInfo.FilePath.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase)
+                || fileInfo.FilePath.EndsWith(".aac", StringComparison.OrdinalIgnoreCase)
+                || fileInfo.FilePath.EndsWith(".alac", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var mp4Info = Mp4CodecReader.DetectCodec(fileInfo.FilePath);
+                    if (mp4Info.Codec == "aac")
+                    {
+                        isAac = true;
+                        aacBitrate = mp4Info.Bitrate;
+                    }
+                }
+                catch { }
+            }
+
             if (ct.IsCancellationRequested) return Cancelled(result);
 
             var buffer = AudioDecoder.Decode(fileInfo.FilePath, ct);
@@ -182,7 +200,9 @@ public class AudioPipeline
                 SpectrogramSampleRate = spectroData.SampleRate,
                 SpectrogramDuration = spectroData.Duration,
                 Mp3Bitrate = mp3Bitrate,
-                Mp3Encoder = mp3Encoder
+                Mp3Encoder = mp3Encoder,
+                AacBitrate = aacBitrate,
+                IsAac = isAac
             };
 
             bool isMp3 = fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
@@ -193,16 +213,28 @@ public class AudioPipeline
                 mp3QualityScore = ComputeMp3Quality(cutoffHz, sampleRate, mp3Bitrate, artifactLevel, hasSpectralHoles);
             }
 
+            double aacQualityScore = 0;
+            if (isAac && aacBitrate > 0)
+            {
+                aacQualityScore = ComputeAacQuality(cutoffHz, sampleRate, aacBitrate, artifactLevel, hasSpectralHoles);
+            }
+
             if (isMp3)
             {
                 result = result with { Authenticity = "LOSSY (MP3)" };
+            }
+            else if (isAac)
+            {
+                result = result with { Authenticity = "LOSSY (AAC)" };
             }
             else
             {
                 result = result with { Authenticity = _losslessScorer.Classify(result) };
             }
 
-            var losslessScore = isMp3 ? mp3QualityScore : _losslessScorer.Score(result);
+            var losslessScore = isMp3 ? mp3QualityScore
+                : isAac ? aacQualityScore
+                : _losslessScorer.Score(result);
             var hiResScore = _losslessScorer.ScoreHiRes(result);
 
             double qualityPercent;
@@ -214,6 +246,14 @@ public class AudioPipeline
                 qualityPercent = mp3QualityScore * 0.6 + masterScore * 0.4;
                 decision = mp3QualityScore >= 80 ? "KEEP"
                     : mp3QualityScore >= 50 ? "INVESTIGATE"
+                    : "REPLACE";
+            }
+            else if (isAac)
+            {
+                var (masterScore, _) = _qualityScorer.Score(result);
+                qualityPercent = aacQualityScore * 0.6 + masterScore * 0.4;
+                decision = aacQualityScore >= 80 ? "KEEP"
+                    : aacQualityScore >= 50 ? "INVESTIGATE"
                     : "REPLACE";
             }
             else
@@ -267,6 +307,15 @@ public class AudioPipeline
     private static string GetFormatLabel(string filePath, int sampleRate, int bitDepth)
     {
         var ext = Path.GetExtension(filePath).ToUpperInvariant().TrimStart('.');
+        if (ext == "M4A" || ext == "ALAC")
+        {
+            try
+            {
+                var info = Mp4CodecReader.DetectCodec(filePath);
+                ext = info.Codec == "alac" ? "ALAC" : info.Codec == "aac" ? "AAC" : ext;
+            }
+            catch { }
+        }
         return $"{ext} {sampleRate / 1000.0:F0}kHz/{bitDepth}bit";
     }
 
@@ -289,6 +338,34 @@ public class AudioPipeline
         else if (cutoffHz < expectedCutoff) score -= 5;
 
         if (bitrate >= 256 && cutoffHz < 18000) score -= 30;
+        if (bitrate >= 192 && cutoffHz < 16000) score -= 25;
+
+        if (artifactLevel == "Strong") score -= 25;
+        else if (artifactLevel == "Medium") score -= 12;
+        else if (artifactLevel == "Weak") score -= 5;
+
+        if (hasSpectralHoles) score -= 15;
+
+        return Math.Max(0, Math.Min(100, score));
+    }
+
+    private static double ComputeAacQuality(double cutoffHz, int sampleRate, int bitrate,
+        string artifactLevel, bool hasSpectralHoles)
+    {
+        double score = 100;
+
+        double expectedCutoff = bitrate switch
+        {
+            >= 256 => 20000,
+            >= 192 => 18000,
+            >= 128 => 16000,
+            _ => 15000
+        };
+
+        if (cutoffHz < expectedCutoff * 0.8) score -= 40;
+        else if (cutoffHz < expectedCutoff * 0.9) score -= 20;
+        else if (cutoffHz < expectedCutoff) score -= 5;
+
         if (bitrate >= 192 && cutoffHz < 16000) score -= 25;
 
         if (artifactLevel == "Strong") score -= 25;

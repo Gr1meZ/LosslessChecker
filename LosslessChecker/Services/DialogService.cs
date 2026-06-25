@@ -10,7 +10,9 @@ public class DialogService : IDialogService
     {
         var window = new SpectrogramWindow(rawData, width, height,
             durationSec, sampleRate, cutoffHz, fileName);
-        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        window.Owner = System.Windows.Application.Current.MainWindow;
+        window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        window.Topmost = true;
         window.Show();
         window.Activate();
     }

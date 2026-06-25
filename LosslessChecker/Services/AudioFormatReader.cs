@@ -13,8 +13,17 @@ public static class AudioFormatReader
         {
             ".flac" => ReadFlac(filePath),
             ".wav" => ReadWav(filePath),
+            ".m4a" or ".alac" => ReadMp4(filePath),
             _ => null
         };
+    }
+
+    private static OriginalFormat? ReadMp4(string filePath)
+    {
+        var info = Mp4CodecReader.DetectCodec(filePath);
+        if (info.SampleRate > 0)
+            return new OriginalFormat(info.SampleRate, info.BitDepth > 0 ? info.BitDepth : 16, info.Channels > 0 ? info.Channels : 2);
+        return null;
     }
 
     private static OriginalFormat? ReadFlac(string filePath)

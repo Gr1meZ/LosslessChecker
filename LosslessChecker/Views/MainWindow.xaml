@@ -127,7 +127,6 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Button Grid.Column="0" Content="📁 Папка" Command="{Binding SelectFolderCommand}"
@@ -145,14 +144,15 @@
                 <Button Grid.Column="4" Content="📊 Экспорт" Command="{Binding ExportCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
                         Width="90" Height="34" Margin="0,0,6,0"/>
-                <Button Grid.Column="5" Content="🌓" Command="{Binding ToggleThemeCommand}"
-                        Style="{StaticResource SecondaryButtonStyle}"
-                        Width="40" Height="34" Margin="0,0,6,0"
-                        ToolTip="Сменить тему"/>
-                <ProgressBar Grid.Column="6" Value="{Binding Progress}" Minimum="0" Maximum="100"
-                             Height="8" Margin="20,0,0,0"
-                             Foreground="{DynamicResource ProgressGradientBrush}"
-                             Background="{DynamicResource BgTertiaryBrush}"/>
+                <Grid Grid.Column="5" Margin="20,0,0,0">
+                    <ProgressBar Value="{Binding Progress}" Minimum="0" Maximum="100"
+                                 Height="8" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource AccentBrush}"
+                                 Background="{DynamicResource BgTertiaryBrush}"/>
+                    <TextBlock Text="{Binding ProgressText}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontSize="10" Foreground="{DynamicResource FgMutedBrush}"/>
+                </Grid>
             </Grid>
         </Border>
 
@@ -184,14 +184,10 @@
                               BorderThickness="0" Padding="4,6"
                               SelectedItemChanged="TreeView_SelectedItemChanged">
                         <TreeView.Resources>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"
-                                             Color="{DynamicResource AccentBrush}"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}"
-                                             Color="{DynamicResource BgPrimaryBrush}"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
-                                             Color="{DynamicResource AccentBrush}"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}"
-                                             Color="{DynamicResource BgPrimaryBrush}"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#4a9eff"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1e1e1e"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#4a9eff"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1e1e1e"/>
                         </TreeView.Resources>
                     </TreeView>
                 </Grid>
@@ -525,7 +521,10 @@
                 <TextBlock Text="🎵" FontSize="64" HorizontalAlignment="Center" Foreground="{DynamicResource FgSubtleBrush}"/>
                 <TextBlock Text="Перетащите папку с аудио сюда" FontSize="18" Foreground="{DynamicResource FgMutedBrush}"
                            HorizontalAlignment="Center" Margin="0,12"/>
-                <TextBlock Text="или нажмите Выбрать папку чтобы начать анализ" FontSize="12" Foreground="{DynamicResource FgSubtleBrush}"
+                <Button Content="📁 Выбрать папку" Command="{Binding SelectFolderCommand}"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Width="160" Height="38" Margin="0,16"/>
+                <TextBlock Text="или перетащите файлы для быстрого анализа" FontSize="12" Foreground="{DynamicResource FgSubtleBrush}"
                            HorizontalAlignment="Center"/>
                 <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="2" CornerRadius="12"
                         Margin="40,20" Padding="20">

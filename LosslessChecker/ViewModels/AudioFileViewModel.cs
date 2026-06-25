@@ -50,13 +50,19 @@ public partial class AudioFileViewModel : ObservableObject
     [ObservableProperty] private WriteableBitmap? _spectrogramBitmap;
     [ObservableProperty] private int _mp3Bitrate;
 
+    public int AacBitrate { get; private set; }
+    public bool IsAac { get; private set; }
+
     public string VerdictLabel => Decision switch
     {
         "KEEP" => SampleRate >= 88200 && HiResScorePercent >= 70 ? "HI-RES" : "LOSSLESS",
         "KEEP (poor master)" => "LOSSLESS",
         "INVESTIGATE" => "NOT SURE",
         "REPLACE" => Format.StartsWith("MP3", StringComparison.OrdinalIgnoreCase) && Mp3Bitrate > 0
-            ? $"MP3 {Mp3Bitrate}" : "REPLACE",
+            ? $"MP3 {Mp3Bitrate}"
+            : IsAac && AacBitrate > 0
+                ? $"AAC {AacBitrate}"
+                : "REPLACE",
         _ => Decision
     };
 
@@ -66,7 +72,8 @@ public partial class AudioFileViewModel : ObservableObject
         "HI-RES" => "✅ HI-RES",
         "NOT SURE" => "⚠ NOT SURE",
         "REPLACE" => "❌ REPLACE",
-        _ => VerdictLabel.StartsWith("MP3") ? $"❌ {VerdictLabel}" : VerdictLabel
+        _ => VerdictLabel.StartsWith("MP3") || VerdictLabel.StartsWith("AAC")
+            ? $"❌ {VerdictLabel}" : VerdictLabel
     };
 
     // Detail panel: metric items collection
@@ -127,6 +134,8 @@ public partial class AudioFileViewModel : ObservableObject
         CoverData = r.CoverData;
         EncoderMatch = r.EncoderMatch;
         Mp3Bitrate = r.Mp3Bitrate;
+        AacBitrate = r.AacBitrate;
+        IsAac = r.IsAac;
 
         if (r.SpectrogramDb is { Length: > 0 })
         {

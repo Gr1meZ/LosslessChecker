@@ -65,7 +65,6 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel(IDialogService dialogService)
     {
         _dialogService = dialogService;
-        _isDarkTheme = LoadThemeSetting();
         FilesView = CollectionViewSource.GetDefaultView(_files);
         FilesView.Filter = FilterFile;
     }
@@ -89,8 +88,8 @@ public partial class MainViewModel : ObservableObject
         bool matchesVerdict =
             ((f.VerdictLabel == "LOSSLESS" || f.VerdictLabel == "HI-RES") && ShowKeep) ||
             (f.VerdictLabel == "NOT SURE" && ShowInvestigate) ||
-            ((f.VerdictLabel == "REPLACE" || f.VerdictLabel.StartsWith("MP3")) && ShowReplace) ||
-            (f.VerdictLabel.StartsWith("MP3") && ShowMp3);
+            ((f.VerdictLabel == "REPLACE" || f.VerdictLabel.StartsWith("MP3") || f.VerdictLabel.StartsWith("AAC")) && ShowReplace) ||
+            ((f.VerdictLabel.StartsWith("MP3") || f.VerdictLabel.StartsWith("AAC")) && ShowMp3);
 
         return matchesVerdict;
     }
@@ -110,60 +109,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private string _currentlyProcessing = "";
 
-    [ObservableProperty]
-    private bool _isDarkTheme = true;
-
-    [RelayCommand]
-    private void ToggleTheme()
-    {
-        IsDarkTheme = !IsDarkTheme;
-        ApplyTheme(IsDarkTheme);
-        SaveThemeSetting(IsDarkTheme);
-    }
-
-    private static void ApplyTheme(bool isDark)
-    {
-        var app = System.Windows.Application.Current;
-        var dict = app.Resources.MergedDictionaries;
-        dict.Clear();
-        dict.Add(new System.Windows.ResourceDictionary
-        {
-            Source = new System.Uri(isDark ? "Themes/Dark.xaml" : "Themes/Light.xaml", System.UriKind.Relative)
-        });
-    }
-
-    private static void SaveThemeSetting(bool isDark)
-    {
-        try
-        {
-            var dir = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "LosslessChecker");
-            System.IO.Directory.CreateDirectory(dir);
-            var path = System.IO.Path.Combine(dir, "settings.json");
-            System.IO.File.WriteAllText(path,
-                System.Text.Json.JsonSerializer.Serialize(new { theme = isDark ? "dark" : "light" }));
-        }
-        catch { }
-    }
-
-    public static bool LoadThemeSetting()
-    {
-        try
-        {
-            var path = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "LosslessChecker", "settings.json");
-            if (System.IO.File.Exists(path))
-            {
-                var json = System.IO.File.ReadAllText(path);
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                return doc.RootElement.GetProperty("theme").GetString() != "light";
-            }
-        }
-        catch { }
-        return true;
-    }
+    public string ProgressText => IsProcessing
+        ? $"{ProcessedFiles}/{TotalFiles} ({Progress:F0}%)"
+        : "";
 
     [ObservableProperty]
     private int _keepCount;
@@ -646,5 +594,6 @@ public partial class MainViewModel : ObservableObject
     private void UpdateSummary()
     {
         SummaryText = $"Ready: {ProcessedFiles}/{TotalFiles} | KEEP: {KeepCount} | INVESTIGATE: {InvestigateCount} | REPLACE: {ReplaceCount} | Errors: {ErrorCount}";
+        OnPropertyChanged(nameof(ProgressText));
     }
 }

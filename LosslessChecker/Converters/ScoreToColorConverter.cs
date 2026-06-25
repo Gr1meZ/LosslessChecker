@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
 
@@ -15,18 +16,18 @@ public class ScoreToColorConverter : IValueConverter
             _ => -1
         };
 
-        if (score >= 70)
-            return new SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 160, 67));     // green
-        if (score >= 40)
-            return new SolidColorBrush(System.Windows.Media.Color.FromRgb(210, 153, 34));     // amber
-        if (score >= 7)
-            return new SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 160, 67));     // green (1-10 scale)
-        if (score >= 4)
-            return new SolidColorBrush(System.Windows.Media.Color.FromRgb(210, 153, 34));     // amber (1-10 scale)
-        if (score >= 1)
-            return new SolidColorBrush(System.Windows.Media.Color.FromRgb(207, 34, 46));     // red
+        string key = score switch
+        {
+            >= 70 => "LosslessGreenBrush",
+            >= 40 => "SuspiciousAmberBrush",
+            >= 7 => "LosslessGreenBrush",
+            >= 4 => "SuspiciousAmberBrush",
+            >= 1 => "FakeRedBrush",
+            _ => "NeutralGrayBrush"
+        };
 
-        return new SolidColorBrush(Colors.Gray);
+        return System.Windows.Application.Current.TryFindResource(key) as System.Windows.Media.Brush
+            ?? new SolidColorBrush(Colors.Gray);
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

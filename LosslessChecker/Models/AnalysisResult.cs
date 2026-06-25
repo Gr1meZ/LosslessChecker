@@ -84,6 +84,9 @@ public record AnalysisResult
     public string Mp3Encoder { get; init; } = "";
     public double Mp3QualityScore { get; init; }
 
+    public int AacBitrate { get; init; }
+    public bool IsAac { get; init; }
+
     public string WhyVerdict { get; init; } = "";
 
     public AnalysisStatus AnalysisStatus { get; init; } = AnalysisStatus.Pending;
