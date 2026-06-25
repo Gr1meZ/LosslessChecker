@@ -220,6 +220,7 @@ public class CutoffDetector
     {
         var nyquist = sampleRate / 2.0;
         double ratio = nyquist > 0 ? cutoffHz / nyquist : 1.0;
+        bool isHiRes = sampleRate >= 88200;
 
         // Shelf type from slope
         string shelfType = cutoffSlope switch
@@ -229,18 +230,28 @@ public class CutoffDetector
             _ => "Natural"
         };
 
-        // Encoder mapping (absolute cutoff, not ratio)
-        string encoderMatch = cutoffHz switch
+        // For Hi-Res files: if cutoff is above CD Nyquist (22.05kHz),
+        // this is a legitimate Hi-Res recording, not a codec artifact.
+        // Codec encoder labels (MP3 128-192, etc.) only apply below 22kHz.
+        string encoderMatch;
+        if (isHiRes && cutoffHz > 22100)
         {
-            <= 16500 => "MP3 128-192 kbps",
-            <= 18500 => "MP3 192-256 kbps",
-            <= 20000 => "MP3 320 / AAC 256 kbps",
-            <= 21500 => "Possible LP filter",
-            _ => "None"
-        };
+            encoderMatch = "None (Hi-Res)";
+        }
+        else
+        {
+            encoderMatch = cutoffHz switch
+            {
+                <= 16500 => "MP3 128-192 kbps",
+                <= 18500 => "MP3 192-256 kbps",
+                <= 20000 => "MP3 320 / AAC 256 kbps",
+                <= 21500 => "Possible LP filter",
+                _ => "None"
+            };
+        }
 
         // Override: if ratio > 0.95, encoder match is None regardless
-        if (ratio >= 0.95)
+        if (!isHiRes && ratio >= 0.95)
             encoderMatch = "None";
 
         // Override: if cutoff > 90% Nyquist, this is the ADC's anti-aliasing filter,
@@ -254,9 +265,15 @@ public class CutoffDetector
     public bool IsFakeHiRes(double cutoffHz, string shelfType, int sampleRate)
     {
         if (sampleRate < 88200) return false;
-        // Fake Hi-Res = brickwall at ~CD Nyquist (20–22.1 kHz) on a high-rate file.
-        // Real acoustic recordings may have natural rolloff at 18-20 kHz,
-        // but they won't have a brickwall shelf at exactly 22.05 kHz.
-        return shelfType == "Brickwall" && cutoffHz >= 20000 && cutoffHz <= 22100;
+        // Fake Hi-Res = brickwall at known upscale frequencies:
+        //   16-17 kHz: MP3 128 kbps upscaled to Hi-Res
+        //   18-20 kHz: MP3 192-320 / AAC upscaled
+        //   20-22.1 kHz: CD (44.1k) upscaled to Hi-Res
+        // Real acoustic recordings may have natural rolloff at any frequency,
+        // but they won't have a brickwall shelf at these exact points.
+        return shelfType == "Brickwall"
+            && ((cutoffHz >= 15500 && cutoffHz <= 17000)
+                || (cutoffHz >= 18000 && cutoffHz <= 20000)
+                || (cutoffHz >= 20000 && cutoffHz <= 22100));
     }
 }
