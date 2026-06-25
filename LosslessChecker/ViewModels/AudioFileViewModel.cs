@@ -232,7 +232,7 @@ public partial class AudioFileViewModel : ObservableObject
         {
             Category = "Спектр",
             Name = "Частотный срез (Cutoff)",
-            Value = $"{r.CutoffFrequency:F0} Гц ({cutoffRatio * 100:F0}% Найквиста)",
+            Value = isHiRes ? $"{r.CutoffFrequency:F0} Гц" : $"{r.CutoffFrequency:F0} Гц ({cutoffRatio * 100:F0}% Найквиста)",
             Status = cutoffStatus,
             StatusColor = cutoffColor,
             Description = "Максимальная частота, выше которой сигнал отсутствует. Настоящий lossless сохраняет полный спектр до частоты Найквиста. Lossy-кодеки (MP3, AAC) обрезают высокие частоты для экономии места.",

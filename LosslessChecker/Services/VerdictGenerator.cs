@@ -106,7 +106,9 @@ public class VerdictGenerator
         var nyquist = r.SampleRate / 2.0;
         double ratio = nyquist > 0 ? r.CutoffFrequency / nyquist : 1.0;
 
-        sb.Append("Срез ").Append($"{r.CutoffFrequency:F0} Гц ({ratio * 100:F0}% Найквиста)");
+        sb.Append("Срез ").Append($"{r.CutoffFrequency:F0} Гц");
+        if (r.SampleRate < 88200)
+            sb.Append($" ({ratio * 100:F0}% Найквиста)");
         if (r.ShelfType == "Brickwall") sb.Append(" — кирпичная стена, признак lossy-кодека");
         else if (r.ShelfType == "Filtered") sb.Append(" — фильтрованный спад");
         else sb.Append(" — естественный спад");
