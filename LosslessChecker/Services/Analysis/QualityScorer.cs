@@ -32,14 +32,18 @@ public class QualityScorer
 
         if (r.LsbZeroPadded) score -= _p.LsbZeroPadQualityPenalty;
 
+        if (r.IsFakeStereo) score -= 5;
+
+        if (r.HasAbruptEdges) score -= 3;
+
         score = Math.Max(0, Math.Min(100, score));
 
         string decision;
         if (r.Authenticity == "TRUE")
         {
-            if (score >= _p.QualityExcellentThreshold) decision = "KEEP";
-            else if (score >= _p.QualityKeepThreshold) decision = "KEEP";
-            else decision = "KEEP (poor master)";
+            if (score >= _p.QualityExcellentThreshold) decision = "KEEP (Excellent)";
+            else if (score >= _p.QualityKeepThreshold) decision = "KEEP (Good)";
+            else decision = "KEEP (Fair)";
         }
         else if (r.Authenticity == "UNCERTAIN")
             decision = "INVESTIGATE";
@@ -47,5 +51,27 @@ public class QualityScorer
             decision = "REPLACE";
 
         return (score, decision);
+    }
+
+    public (double authenticityScore, double masteringScore, string authenticityVerdict, string masteringVerdict, string decision) ScoreFull(AnalysisResult r, LosslessScorer scorer)
+    {
+        double authScore = scorer.AuthenticityScore(r);
+        double mastScore = scorer.MasteringScore(r);
+
+        string authVerdict = authScore >= 70 ? "TRUE" : authScore >= 50 ? "UNCERTAIN" : "FALSE";
+        if (r.IsCorrupted) { authVerdict = "CORRUPTED"; authScore = 0; mastScore = 0; }
+
+        string mastVerdict = mastScore >= 80 ? "Excellent" : mastScore >= 50 ? "Good" : "Fair";
+
+        string decision;
+        if (r.IsCorrupted) decision = "CORRUPTED";
+        else if (r.Authenticity == "MQA") decision = "MQA (needs decoder)";
+        else if (authVerdict == "FALSE") decision = "REPLACE";
+        else if (authVerdict == "UNCERTAIN") decision = "INVESTIGATE";
+        else if (mastVerdict == "Excellent") decision = "KEEP (Excellent)";
+        else if (mastVerdict == "Good") decision = "KEEP (Good)";
+        else decision = "KEEP (Fair)";
+
+        return (authScore, mastScore, authVerdict, mastVerdict, decision);
     }
 }
