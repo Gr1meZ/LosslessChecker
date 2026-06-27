@@ -45,4 +45,24 @@ public class CutoffDetectorTests
     {
         Assert.False(_detector.IsFakeHiRes(20000, "Natural", 96000));
     }
+
+    [Fact]
+    public void FadeOutDoesNotTriggerBrickwallCutoff()
+    {
+        int sampleRate = 44100;
+        double duration = 15;
+        int n = (int)(sampleRate * duration);
+        var samples = new float[n];
+        var rng = new Random(42);
+        for (int i = 0; i < n; i++)
+        {
+            double t = (double)i / sampleRate;
+            double freq = 1000 + (19000 * t / duration);
+            double amp = t < duration * 0.9 ? 0.5 : 0.5 * Math.Exp(-3 * (t - duration * 0.9) / (duration * 0.1));
+            samples[i] = (float)(amp * Math.Sin(2 * Math.PI * freq * t));
+        }
+        var detector = new CutoffDetector();
+        var (cutoff, _, _) = detector.DetectFull(samples, sampleRate);
+        Assert.True(cutoff > 15000, $"Cutoff {cutoff:F0} Hz too low");
+    }
 }

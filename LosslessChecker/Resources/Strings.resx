@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <data name="Status_ProcessingFormat" xml:space="preserve"><value>Обработка: {0} [{1}/{2}]</value></data>
+  <data name="Section_SpectrumAnalysis" xml:space="preserve"><value>Спектральный анализ</value></data>
+  <data name="Decision_Keep" xml:space="preserve"><value>ОСТАВИТЬ</value></data>
+  <data name="Decision_Investigate" xml:space="preserve"><value>ПРОВЕРИТЬ</value></data>
+  <data name="Decision_Replace" xml:space="preserve"><value>ЗАМЕНИТЬ</value></data>
+</root>

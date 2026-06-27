@@ -32,4 +32,42 @@ public class BitDepthValidatorTests
         bool isPadded = _validator.CheckLsbZeroPadded(samples, 16);
         Assert.False(isPadded);
     }
+
+    [Fact]
+    public void BrickwalledEdmDoesNotTriggerSuspiciousBitDepth()
+    {
+        var rng = new Random(42);
+        int sampleRate = 44100;
+        int n = sampleRate * 10;
+        var samples = new float[n];
+        for (int i = 0; i < n; i++)
+            samples[i] = (float)(rng.NextDouble() * 2 - 1) * 0.5f;
+
+        var validator = new BitDepthValidator();
+        validator.Reset();
+        validator.AddChunk(samples);
+        var result = validator.GetResult(16);
+
+        Assert.False(result.IsSuspicious);
+    }
+
+    [Fact]
+    public void TpdfDitherDoesNotTriggerLsbZeroPad()
+    {
+        var rng = new Random(42);
+        int n = 44100 * 2;
+        var samples = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            double signal = Math.Sin(2 * Math.PI * 1000 * i / 44100);
+            double u1 = rng.NextDouble() * 2 - 1;
+            double u2 = rng.NextDouble() * 2 - 1;
+            double tpdf = (u1 + u2) * (1.0 / 8388607.0);
+            int sample24 = (int)Math.Round((signal + tpdf) * 8388607.0);
+            samples[i] = (float)(sample24 / 8388607.0);
+        }
+        var validator = new BitDepthValidator();
+        bool lsbZero = validator.CheckLsbZeroPadded(samples, 24);
+        Assert.False(lsbZero, "TPDF dither should not trigger LSB zero-padding");
+    }
 }

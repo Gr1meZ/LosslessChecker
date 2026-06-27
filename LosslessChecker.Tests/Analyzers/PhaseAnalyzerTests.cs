@@ -1,3 +1,4 @@
+using LosslessChecker.Models;
 using LosslessChecker.Services.Analyzers;
 using LosslessChecker.Tests.Helpers;
 using Xunit;
@@ -30,5 +31,18 @@ public class PhaseAnalyzerTests
         var buffer = TestSignalGenerator.GenerateStereo(1000, 2, 44100, invertRight: true);
         var result = _analyzer.Analyze(buffer);
         Assert.False(result.IsMonoCompatible);
+    }
+
+    [Fact]
+    public void MonoFileSkipsPhaseAndFakeStereoChecks()
+    {
+        var buffer = new StereoBuffer(
+            new float[] { 0.5f, 0.3f, -0.2f },
+            Array.Empty<float>(),
+            44100);
+        var analyzer = new PhaseAnalyzer();
+        var result = analyzer.Analyze(buffer);
+        Assert.Equal(1.0, result.Correlation);
+        Assert.True(result.IsMonoCompatible);
     }
 }

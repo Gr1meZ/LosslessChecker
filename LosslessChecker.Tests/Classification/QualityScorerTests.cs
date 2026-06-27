@@ -19,7 +19,7 @@ public class QualityScorerTests
         };
         var (score, decision) = _scorer.Score(r);
         Assert.Equal(100, score);
-        Assert.Equal("KEEP", decision);
+        Assert.Equal("KEEP (Excellent)", decision);
     }
 
     [Fact]
@@ -28,7 +28,7 @@ public class QualityScorerTests
         var r = new AnalysisResult
         {
             Authenticity = "TRUE", DynamicRange = 4, ClippingPercent = 2.0,
-            HasIsp = true, TruePeakDb = 1.5, IntegratedLufs = -6,
+            HasIsp = true, TruePeakDb = 1.5, IntegratedLufs = -4,
             DcOffsetL = 0, DcOffsetR = 0, Correlation = 1.0, LsbZeroPadded = false
         };
         var (score, decision) = _scorer.Score(r);
