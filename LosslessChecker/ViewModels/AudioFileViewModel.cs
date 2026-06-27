@@ -51,7 +51,9 @@ public partial class AudioFileViewModel : ObservableObject
     [ObservableProperty] private int _mp3Bitrate;
     [ObservableProperty] private string _claimedType = "";
     [ObservableProperty] private string _detectedType = "";
-    [ObservableProperty] private string _bandwidth = "";
+    [ObservableProperty] private int _bitrateSpectrum;
+    [ObservableProperty] private System.Windows.Media.Brush _bitrateSpectrumColor =
+        System.Windows.Media.Brushes.Gray;
     [ObservableProperty] private string _sizePerMinute = "";
     [ObservableProperty] private System.Windows.Media.Brush _sizePerMinuteColor =
         System.Windows.Media.Brushes.Gray;
@@ -183,7 +185,15 @@ public partial class AudioFileViewModel : ObservableObject
         ActualBitrate = r.ActualBitrate;
         ClaimedType = r.ClaimedType;
         DetectedType = r.DetectedType;
-        Bandwidth = r.Bandwidth;
+        // Bitrate spectrum: expected bitrate from cutoff analysis
+        BitrateSpectrum = LosslessChecker.Services.CutoffDetector.MapCutoffToBitrate(
+            r.CutoffFrequency, r.ShelfType, r.ActualBitrate, r.SampleRate);
+
+        // Green if spectrum >= actual, red if spectrum significantly lower (implies transcode)
+        if (BitrateSpectrum >= r.ActualBitrate * 0.85)
+            BitrateSpectrumColor = GetBrush("LosslessGreenBrush");
+        else
+            BitrateSpectrumColor = GetBrush("FakeRedBrush");
 
         double mbPerMin = r.DurationSeconds > 0
             ? new System.IO.FileInfo(r.FilePath).Length / (1024.0 * 1024.0) / (r.DurationSeconds / 60.0)

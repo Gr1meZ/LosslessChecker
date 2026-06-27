@@ -268,7 +268,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="Название" Binding="{Binding FileName}" Width="*"
+                    <DataGridTextColumn Header="Название" Binding="{Binding FileName}" Width="*" MaxWidth="300"
                                         SortMemberPath="FileName" SortDirection="Ascending">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
@@ -288,9 +288,27 @@
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="Формат" Binding="{Binding Format}" Width="60"
                                         SortMemberPath="Format"/>
-                    <DataGridTextColumn Header="Полоса" Binding="{Binding Bandwidth}" Width="70"
-                                        SortMemberPath="Bandwidth"/>
-                    <DataGridTextColumn Header="МБ/мин" Binding="{Binding SizePerMinute}" Width="60"
+                    <DataGridTextColumn Header="Битрейт" Binding="{Binding ActualBitrate, StringFormat={}{0} kbps}" Width="62"
+                                        SortMemberPath="ActualBitrate">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontFamily" Value="Consolas"/>
+                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Спектр" Binding="{Binding BitrateSpectrum, StringFormat={}{0} kbps}" Width="62"
+                                        SortMemberPath="BitrateSpectrum">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{Binding BitrateSpectrumColor}"/>
+                                <Setter Property="FontFamily" Value="Consolas"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="МБ/мин" Binding="{Binding SizePerMinute}" Width="55"
                                         SortMemberPath="SizePerMinute">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
@@ -312,14 +330,9 @@
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="Заявлен" Binding="{Binding ClaimedType}" Width="80"
-                                        SortMemberPath="ClaimedType">
-                        <DataGridTextColumn.ElementStyle>
-                            <Style TargetType="TextBlock">
-                            </Style>
-                        </DataGridTextColumn.ElementStyle>
-                    </DataGridTextColumn>
-                    <DataGridTextColumn Header="По анализу" Binding="{Binding DetectedType}" Width="Auto" MinWidth="100"
+                    <DataGridTextColumn Header="Заявлен" Binding="{Binding ClaimedType}" Width="70"
+                                        SortMemberPath="ClaimedType"/>
+                    <DataGridTextColumn Header="По анализу" Binding="{Binding DetectedType}" Width="Auto" MinWidth="90"
                                         SortMemberPath="DetectedType">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
@@ -327,7 +340,7 @@
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="Решение" Binding="{Binding VerdictLabel}" Width="90"
+                    <DataGridTextColumn Header="Решение" Binding="{Binding VerdictLabel}" Width="75"
                                          SortMemberPath="VerdictLabel">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">

@@ -72,6 +72,24 @@ public class CutoffDetector
         return (r.cutoff, r.spectrum);
     }
 
+    public static int MapCutoffToBitrate(double cutoffHz, string shelfType, int actualBitrate, int sampleRate)
+    {
+        var nyquist = sampleRate / 2.0;
+        double ratio = nyquist > 0 ? cutoffHz / nyquist : 1.0;
+
+        if (shelfType == "Brickwall")
+        {
+            if (cutoffHz <= 16500) return 128;
+            if (cutoffHz <= 18500) return 192;
+            if (cutoffHz <= 20000) return 256;
+            if (cutoffHz <= 20500) return 320;
+            return actualBitrate;
+        }
+
+        // Natural or filtered = no transcode detected. Return actual bitrate as expected.
+        return actualBitrate;
+    }
+
     // === NEW: Derivative-based cutoff detection ===
     // Instead of a fixed -60 dB amplitude threshold (which fails on quiet tracks
     // and is fooled by dither noise), we search for the STEEPEST NEGATIVE SLOPE
