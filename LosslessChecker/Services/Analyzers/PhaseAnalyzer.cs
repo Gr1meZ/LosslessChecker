@@ -10,6 +10,13 @@ public class PhaseAnalyzer : IChunkAccumulator<PhaseResult>
     private double _sumXY, _sumX2, _sumY2;
     private int _samplesInBlock;
 
+    public void Reset()
+    {
+        _correlations.Clear();
+        _sumXY = _sumX2 = _sumY2 = 0;
+        _samplesInBlock = 0;
+    }
+
     public PhaseResult Analyze(StereoBuffer buffer)
     {
         if (!buffer.IsStereo) return new PhaseResult(1.0, true);

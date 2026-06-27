@@ -13,6 +13,12 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
     private double _maxAbsInBlock;
     private bool _initialized;
 
+    public void Reset()
+    {
+        _blockRms.Clear(); _blockMaxAbs.Clear();
+        _sumSqInBlock = _maxAbsInBlock = 0; _samplesInBlock = 0;
+    }
+
     private void Init(int sampleRate)
     {
         _sampleRate = sampleRate;
@@ -147,14 +153,23 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
         if (claimedBitDepth != 24 || buffer.Length < 1000) return false;
         int n = buffer.Length;
         int blockSize = n / 100;
+
+        // Check each channel independently — averaging can mask zero-padding
+        bool lsbZeroL = CheckLsbZeroPaddedChannel(buffer.Left, n, blockSize);
+        bool lsbZeroR = buffer.IsStereo ? CheckLsbZeroPaddedChannel(buffer.Right, n, blockSize) : lsbZeroL;
+        return lsbZeroL && lsbZeroR;
+    }
+
+    private static bool CheckLsbZeroPaddedChannel(float[] channel, int n, int blockSize)
+    {
+        // Find loud blocks threshold from sorted maxAbs
         var sortedBlocks = new List<double>();
         for (int pos = 0; pos + blockSize <= n; pos += blockSize)
         {
             double maxAbs = 0;
             for (int i = pos; i < pos + blockSize; i++)
             {
-                double s = buffer.IsStereo ? (buffer.Left[i] + buffer.Right[i]) * 0.5 : buffer.Left[i];
-                double abs = Math.Abs(s);
+                double abs = Math.Abs(channel[i]);
                 if (abs > maxAbs) maxAbs = abs;
             }
             sortedBlocks.Add(maxAbs);
@@ -169,15 +184,13 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
             double maxAbs = 0;
             for (int i = pos; i < pos + blockSize; i++)
             {
-                double s = buffer.IsStereo ? (buffer.Left[i] + buffer.Right[i]) * 0.5 : buffer.Left[i];
-                double abs = Math.Abs(s);
+                double abs = Math.Abs(channel[i]);
                 if (abs > maxAbs) maxAbs = abs;
             }
             if (maxAbs < loudThreshold) continue;
             for (int i = pos; i < pos + blockSize; i++)
             {
-                double s = buffer.IsStereo ? (buffer.Left[i] + buffer.Right[i]) * 0.5 : buffer.Left[i];
-                int sample24 = (int)(s * 8388607.0 + 0.5 * Math.Sign(s));
+                int sample24 = (int)(channel[i] * 8388607.0 + 0.5 * Math.Sign(channel[i]));
                 if ((sample24 & 0xFF) == 0) zeroCount++;
                 totalCount++;
             }

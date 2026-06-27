@@ -10,15 +10,14 @@ public class DrMeter : IChunkAccumulator<DrResult>
     private const double CalibrationDb = 2.65;
     private const int ClipRunMin = 3;
 
-    private readonly List<double> _rmsDbL = new(), _peakDbL = new();
-    private readonly List<double> _rmsDbR = new(), _peakDbR = new();
+    private readonly List<double> _rmsDb = new(), _peakDb = new();
     private double _sumSqL, _sumSqR, _maxAbsL, _maxAbsR;
-    private double _globalPeakL, _globalPeakR;
-    private int _samplesInBlockL, _samplesInBlockR;
-    private int _blockSize, _sampleRate;
-    private long _totalSamplesL, _totalSamplesR;
-    private int _clippedRunsL, _clippedRunsR;
-    private int _consecutiveL, _consecutiveR;
+    private double _globalPeak;
+    private int _samplesInBlock, _blockSize, _sampleRate;
+    private long _totalSamples;
+    private int _clippedRuns;
+    private int _consecutive;
+    private bool _isStereo;
 
     public void Init(int sampleRate)
     {
@@ -26,9 +25,27 @@ public class DrMeter : IChunkAccumulator<DrResult>
         _blockSize = (int)(sampleRate * BlockSec);
     }
 
+    public void Reset()
+    {
+        _rmsDb.Clear(); _peakDb.Clear();
+        _globalPeak = 0; _clippedRuns = 0; _consecutive = 0;
+        _totalSamples = 0;
+        _sumSqL = _sumSqR = _maxAbsL = _maxAbsR = 0; _samplesInBlock = 0;
+    }
+
     public void AddChunk(ReadOnlySpan<float> mono)
     {
-        AddChunkLeft(mono);
+        for (int i = 0; i < mono.Length; i++)
+        {
+            float s = mono[i];
+            float abs = Math.Abs(s);
+            if (abs > _maxAbsL) _maxAbsL = abs;
+            _sumSqL += (double)s * s;
+            _consecutive = abs >= 1.0f ? _consecutive + 1 : 0;
+            if (_consecutive == ClipRunMin) _clippedRuns++;
+            _totalSamples++;
+            if (++_samplesInBlock >= _blockSize) FlushBlock();
+        }
     }
 
     public void AddChunk(ReadOnlySpan<float> left, ReadOnlySpan<float> right)
@@ -36,26 +53,23 @@ public class DrMeter : IChunkAccumulator<DrResult>
         int n = Math.Min(left.Length, right.Length);
         for (int i = 0; i < n; i++)
         {
-            float sl = left[i];
-            float absL = Math.Abs(sl);
-            if (absL > _maxAbsL) _maxAbsL = absL;
-            _sumSqL += (double)sl * sl;
-            _consecutiveL = absL >= 1.0f ? _consecutiveL + 1 : 0;
-            if (_consecutiveL == ClipRunMin) _clippedRunsL++;
-            _totalSamplesL++;
-            if (++_samplesInBlockL >= _blockSize) FlushBlockL();
+            float sl = left[i], sr = right[i];
+            float absL = Math.Abs(sl), absR = Math.Abs(sr);
 
-            float sr = right[i];
-            float absR = Math.Abs(sr);
-            if (absR > _maxAbsR) _maxAbsR = absR;
+            _sumSqL += (double)sl * sl;
             _sumSqR += (double)sr * sr;
-            _consecutiveR = absR >= 1.0f ? _consecutiveR + 1 : 0;
-            if (_consecutiveR == ClipRunMin) _clippedRunsR++;
-            _totalSamplesR++;
-            if (++_samplesInBlockR >= _blockSize) FlushBlockR();
+
+            float maxAbs = absL > absR ? absL : absR;
+            if (maxAbs > _maxAbsL) _maxAbsL = maxAbs;
+
+            _consecutive = maxAbs >= 1.0f ? _consecutive + 1 : 0;
+            if (_consecutive == ClipRunMin) _clippedRuns++;
+
+            _totalSamples++;
+            if (++_samplesInBlock >= _blockSize) FlushBlock();
         }
 
-        if (left.Length > n) AddChunkLeft(left[n..]);
+        if (left.Length > n) AddChunk(left[n..]);
     }
 
     private void AddChunkLeft(ReadOnlySpan<float> mono)
@@ -66,62 +80,41 @@ public class DrMeter : IChunkAccumulator<DrResult>
             double abs = Math.Abs(s);
             if (abs > _maxAbsL) _maxAbsL = abs;
             _sumSqL += (double)s * s;
-            _consecutiveL = abs >= 1.0f ? _consecutiveL + 1 : 0;
-            if (_consecutiveL == ClipRunMin) _clippedRunsL++;
-            _totalSamplesL++;
-            if (++_samplesInBlockL >= _blockSize) FlushBlockL();
+            _consecutive = abs >= 1.0f ? _consecutive + 1 : 0;
+            if (_consecutive == ClipRunMin) _clippedRuns++;
+            _totalSamples++;
+            if (++_samplesInBlock >= _blockSize) FlushBlock();
         }
     }
 
-    private void FlushBlockL()
+    private void FlushBlock()
     {
-        if (_samplesInBlockL == 0) return;
-        if (_maxAbsL > _globalPeakL) _globalPeakL = _maxAbsL;
-        double rms = Math.Sqrt(_sumSqL / _samplesInBlockL);
-        _rmsDbL.Add(20.0 * Math.Log10(Math.Max(rms, 1e-10)));
-        _peakDbL.Add(20.0 * Math.Log10(Math.Max(_maxAbsL, 1e-10)));
-        _sumSqL = _maxAbsL = 0; _samplesInBlockL = 0;
-    }
-
-    private void FlushBlockR()
-    {
-        if (_samplesInBlockR == 0) return;
-        if (_maxAbsR > _globalPeakR) _globalPeakR = _maxAbsR;
-        double rms = Math.Sqrt(_sumSqR / _samplesInBlockR);
-        _rmsDbR.Add(20.0 * Math.Log10(Math.Max(rms, 1e-10)));
-        _peakDbR.Add(20.0 * Math.Log10(Math.Max(_maxAbsR, 1e-10)));
-        _sumSqR = _maxAbsR = 0; _samplesInBlockR = 0;
+        if (_samplesInBlock == 0) return;
+        double combinedSq = _sumSqL + _sumSqR;
+        int channelCount = _isStereo ? 2 : 1;
+        double rms = Math.Sqrt(combinedSq / (_samplesInBlock * channelCount));
+        double peak = Math.Max(_maxAbsL, _maxAbsR);
+        if (peak > _globalPeak) _globalPeak = peak;
+        _rmsDb.Add(20.0 * Math.Log10(Math.Max(rms, 1e-10)));
+        _peakDb.Add(20.0 * Math.Log10(Math.Max(peak, 1e-10)));
+        _sumSqL = _sumSqR = _maxAbsL = _maxAbsR = 0; _samplesInBlock = 0;
     }
 
     public DrResult GetResult()
     {
-        FlushBlockL(); FlushBlockR();
+        FlushBlock();
 
-        if (_rmsDbR.Count == 0)
-        {
-            _rmsDbR.AddRange(_rmsDbL);
-            _peakDbR.AddRange(_peakDbL);
-            _globalPeakR = _globalPeakL;
-            _clippedRunsR = _clippedRunsL;
-            _totalSamplesR = _totalSamplesL;
-        }
+        double dr = _rmsDb.Count >= 5 ? ComputeDr(_rmsDb, _peakDb) : 0;
 
-        double drL = _rmsDbL.Count >= 5 ? ComputeDr(_rmsDbL, _peakDbL) : 0;
-        double drR = _rmsDbR.Count >= 5 ? ComputeDr(_rmsDbR, _peakDbR) : drL;
-        double dr = Math.Min(drL, drR);
+        double peak = _globalPeak > 0 ? 20.0 * Math.Log10(_globalPeak) : 0;
 
-        double peakL = _globalPeakL > 0 ? 20.0 * Math.Log10(_globalPeakL) : 0;
-        double peakR = _globalPeakR > 0 ? 20.0 * Math.Log10(_globalPeakR) : 0;
-        double peak = Math.Max(peakL, peakR);
-
-        long totalSamples = Math.Max(_totalSamplesL, _totalSamplesR);
-        double maxClipRuns = totalSamples / (double)ClipRunMin;
+        double maxClipRuns = _totalSamples / (double)ClipRunMin;
         double clipPct = maxClipRuns > 0
-            ? Math.Max(_clippedRunsL, _clippedRunsR) / maxClipRuns * 100.0
+            ? _clippedRuns / maxClipRuns * 100.0
             : 0;
 
         return new DrResult(
-            Math.Round(dr, 0), Math.Round(drL, 0), Math.Round(drR, 0),
+            Math.Round(dr, 0), Math.Round(dr, 0), Math.Round(dr, 0),
             Math.Round(peak, 1), Math.Round(clipPct, 2));
     }
 
@@ -139,12 +132,14 @@ public class DrMeter : IChunkAccumulator<DrResult>
     public DrResult AnalyzeStereo(StereoBuffer buffer)
     {
         Init(buffer.SampleRate);
-        _rmsDbL.Clear(); _peakDbL.Clear(); _rmsDbR.Clear(); _peakDbR.Clear();
-        _globalPeakL = _globalPeakR = 0;
-        _clippedRunsL = _clippedRunsR = _consecutiveL = _consecutiveR = 0;
-        _totalSamplesL = _totalSamplesR = 0;
+        _rmsDb.Clear(); _peakDb.Clear();
+        _globalPeak = 0;
+        _clippedRuns = _consecutive = 0;
+        _totalSamples = 0;
         _sumSqL = _sumSqR = _maxAbsL = _maxAbsR = 0;
-        _samplesInBlockL = _samplesInBlockR = 0;
+        _samplesInBlock = 0;
+
+        _isStereo = buffer.IsStereo;
 
         if (buffer.IsStereo)
             AddChunk(buffer.Left, buffer.Right);
@@ -157,17 +152,17 @@ public class DrMeter : IChunkAccumulator<DrResult>
     public (double dr, double samplePeakDb, double clippingPercent) Analyze(float[] samples, int sampleRate)
     {
         Init(sampleRate);
-        _rmsDbL.Clear(); _peakDbL.Clear();
-        _globalPeakL = _clippedRunsL = _consecutiveL = 0;
-        _totalSamplesL = 0;
-        _sumSqL = _maxAbsL = 0; _samplesInBlockL = 0;
+        _rmsDb.Clear(); _peakDb.Clear();
+        _globalPeak = _clippedRuns = _consecutive = 0;
+        _totalSamples = 0;
+        _sumSqL = _maxAbsL = 0; _samplesInBlock = 0;
 
         AddChunk(samples);
 
-        double dr = _rmsDbL.Count >= 5 ? ComputeDr(_rmsDbL, _peakDbL) : 0;
-        double peak = _globalPeakL > 0 ? 20.0 * Math.Log10(_globalPeakL) : 0;
-        double maxClipRuns = _totalSamplesL / (double)ClipRunMin;
-        double clipPct = maxClipRuns > 0 ? _clippedRunsL / maxClipRuns * 100.0 : 0;
+        double dr = _rmsDb.Count >= 5 ? ComputeDr(_rmsDb, _peakDb) : 0;
+        double peak = _globalPeak > 0 ? 20.0 * Math.Log10(_globalPeak) : 0;
+        double maxClipRuns = _totalSamples / (double)ClipRunMin;
+        double clipPct = maxClipRuns > 0 ? _clippedRuns / maxClipRuns * 100.0 : 0;
         return (Math.Round(dr, 0), Math.Round(peak, 1), Math.Round(clipPct, 2));
     }
 }
