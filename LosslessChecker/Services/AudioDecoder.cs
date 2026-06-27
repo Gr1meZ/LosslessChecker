@@ -95,7 +95,7 @@ public static partial class AudioDecoder
         var left = buffer.Left;
         var right = buffer.Right;
         for (int i = 0; i < mono.Length; i++)
-            mono[i] = Math.Abs(left[i]) > Math.Abs(right[i]) ? left[i] : right[i];
+            mono[i] = (left[i] + right[i]) * 0.5f;
         return mono;
     }
 
