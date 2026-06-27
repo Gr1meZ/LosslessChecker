@@ -5,173 +5,117 @@ namespace LosslessChecker.Services;
 
 public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
 {
-    private readonly List<double> _blockRms = new();
+    private const int BlockSize = 4096;
+    private const double HistoDbMin = -144.0;
+    private const double HistoDbStep = 0.1;
+    private const int HistoBins = 1440;
+    private const double SafetyGateDb = -40.0;
+    private const double CumulativeThreshold = 0.01;
+
+    private readonly int[] _rmsHistogram = new int[HistoBins];
+    private long _totalBlocks;
+
     private double _sumSqInBlock;
-    private int _samplesInBlock, _blockSize;
-    private int _sampleRate;
-    private readonly List<double> _blockMaxAbs = new();
-    private double _maxAbsInBlock;
-    private bool _initialized;
+    private int _samplesInBlock;
+    private bool _hasSeenChunks;
 
     public void Reset()
     {
-        _blockRms.Clear(); _blockMaxAbs.Clear();
-        _sumSqInBlock = _maxAbsInBlock = 0; _samplesInBlock = 0;
-    }
-
-    private void Init(int sampleRate)
-    {
-        _sampleRate = sampleRate;
-        _blockSize = Math.Max(1, sampleRate / 10);
-        _initialized = true;
+        Array.Clear(_rmsHistogram, 0, HistoBins);
+        _totalBlocks = 0;
+        _sumSqInBlock = 0;
+        _samplesInBlock = 0;
+        _hasSeenChunks = false;
     }
 
     public void AddChunk(ReadOnlySpan<float> mono)
     {
+        _hasSeenChunks = true;
         for (int i = 0; i < mono.Length; i++)
         {
             float s = mono[i];
             _sumSqInBlock += s * s;
-            float abs = Math.Abs(s);
-            if (abs > _maxAbsInBlock) _maxAbsInBlock = abs;
-            if (++_samplesInBlock >= _blockSize) FlushBlock();
+            if (++_samplesInBlock >= BlockSize)
+            {
+                double rms = Math.Sqrt(_sumSqInBlock / BlockSize);
+                double rmsDb = 20.0 * Math.Log10(Math.Max(rms, 1e-10));
+                int bucket = (int)((rmsDb - HistoDbMin) / HistoDbStep);
+                bucket = Math.Clamp(bucket, 0, HistoBins - 1);
+                _rmsHistogram[bucket]++;
+                _totalBlocks++;
+                _sumSqInBlock = 0;
+                _samplesInBlock = 0;
+            }
         }
-    }
-
-    private void FlushBlock()
-    {
-        if (_samplesInBlock == 0) return;
-        _blockRms.Add(Math.Sqrt(_sumSqInBlock / _samplesInBlock));
-        _blockMaxAbs.Add(_maxAbsInBlock);
-        _sumSqInBlock = 0; _maxAbsInBlock = 0; _samplesInBlock = 0;
-    }
-
-    public BitDepthResult GetResult()
-    {
-        FlushBlock();
-        return BuildResult(24); // Default 24-bit for stereo path; overridden below
     }
 
     public BitDepthResult GetResult(int claimedBitDepth)
     {
-        FlushBlock();
+        if (_samplesInBlock > 0)
+        {
+            double rms = Math.Sqrt(_sumSqInBlock / _samplesInBlock);
+            double rmsDb = 20.0 * Math.Log10(Math.Max(rms, 1e-10));
+            int bucket = (int)((rmsDb - HistoDbMin) / HistoDbStep);
+            bucket = Math.Clamp(bucket, 0, HistoBins - 1);
+            _rmsHistogram[bucket]++;
+            _totalBlocks++;
+        }
         return BuildResult(claimedBitDepth);
     }
 
+    public BitDepthResult GetResult() => GetResult(24);
+
     private BitDepthResult BuildResult(int claimedBitDepth)
     {
-        if (_blockRms.Count < 5)
+        if (_totalBlocks < 5)
             return new BitDepthResult(false, "Insufficient blocks", 0, false, claimedBitDepth);
 
-        var sortedRms = new List<double>(_blockRms); sortedRms.Sort();
-        int quietCount = Math.Max(1, sortedRms.Count / 10);
-        double quietRms = sortedRms.Take(quietCount).Average();
-        double noiseFloorDb = 20.0 * Math.Log10(Math.Max(quietRms, 1e-10));
+        long cumulSum = 0;
+        double noiseFloorDb = HistoDbMin;
+        bool foundNoiseFloor = false;
 
-        int expectedNoiseFloor = claimedBitDepth * -6;
-        double toleranceDb = 16;
-        bool noiseFloorSuspicious = noiseFloorDb < -50 && noiseFloorDb > expectedNoiseFloor + toleranceDb;
-        bool lsbZero = false; // LSB check requires original samples — deferred to ValidateStereo
-        bool suspicious = noiseFloorSuspicious || lsbZero;
+        for (int b = 0; b < HistoBins; b++)
+        {
+            cumulSum += _rmsHistogram[b];
+            if ((double)cumulSum / _totalBlocks >= CumulativeThreshold)
+            {
+                noiseFloorDb = HistoDbMin + b * HistoDbStep;
+                foundNoiseFloor = true;
+                break;
+            }
+        }
 
-        int effectiveBits = noiseFloorDb < -50 ? (int)Math.Round(-noiseFloorDb / 6.0) : claimedBitDepth;
-        effectiveBits = Math.Min(effectiveBits, claimedBitDepth);
+        if (!foundNoiseFloor)
+            noiseFloorDb = 0;
 
-        string verdict = lsbZero
-            ? $"Claimed {claimedBitDepth}-bit but lower 8 bits are zero-padded (effective {effectiveBits}-bit)."
-            : noiseFloorDb > expectedNoiseFloor + toleranceDb
+        if (noiseFloorDb > SafetyGateDb)
+        {
+            return new BitDepthResult(false,
+                $"No quiet sections detected (noise floor estimate {noiseFloorDb:F0} dB > {SafetyGateDb:F0} gate). Effective bit depth analysis skipped.",
+                Math.Round(noiseFloorDb, 1), false, claimedBitDepth);
+        }
+
+        int effectiveBits = Math.Min((int)Math.Round(-noiseFloorDb / 6.0), claimedBitDepth);
+        double expectedNoiseFloor = claimedBitDepth * -6;
+        bool suspicious = noiseFloorDb > expectedNoiseFloor + 16;
+
+        return new BitDepthResult(suspicious,
+            suspicious
                 ? $"Claimed {claimedBitDepth}-bit but noise floor at {noiseFloorDb:F0} dB = ~{effectiveBits}-bit effective."
-                : $"{claimedBitDepth}-bit integrity confirmed.";
-
-        return new BitDepthResult(suspicious, verdict, Math.Round(noiseFloorDb, 1), lsbZero, effectiveBits);
+                : $"{claimedBitDepth}-bit integrity confirmed.",
+            Math.Round(noiseFloorDb, 1), false, effectiveBits);
     }
 
     public bool CheckLsbZeroPadded(float[] samples, int claimedBitDepth)
     {
         if (claimedBitDepth != 24 || samples.Length < 1000) return false;
-        int blockSize = samples.Length / 100;
+        int blockSize = Math.Max(100, samples.Length / 100);
         var sortedBlocks = new List<double>();
         for (int pos = 0; pos + blockSize <= samples.Length; pos += blockSize)
         {
             double maxAbs = 0;
             for (int i = pos; i < pos + blockSize; i++)
                 maxAbs = Math.Max(maxAbs, Math.Abs(samples[i]));
-            sortedBlocks.Add(maxAbs);
-        }
-        sortedBlocks.Sort((a, b) => b.CompareTo(a));
-        int loudCount = Math.Max(1, sortedBlocks.Count / 10);
-        int zeroCount = 0, totalCount = 0;
-        for (int pos = 0; pos + blockSize <= samples.Length; pos += blockSize)
-        {
-            double maxAbs = 0;
-            for (int i = pos; i < pos + blockSize; i++)
-                maxAbs = Math.Max(maxAbs, Math.Abs(samples[i]));
-            if (maxAbs < sortedBlocks[Math.Min(loudCount - 1, sortedBlocks.Count - 1)]) continue;
-            for (int i = pos; i < pos + blockSize; i++)
-            {
-                int sample24 = (int)(samples[i] * 8388607.0 + 0.5 * Math.Sign(samples[i]));
-                if ((sample24 & 0xFF) == 0) zeroCount++;
-                totalCount++;
-            }
-        }
-        return totalCount > 100 && (double)zeroCount / totalCount > 0.95;
-    }
-
-    public (bool, string, double) Validate(float[] samples, int claimedBitDepth, int sampleRate)
-    {
-        if (!_initialized) Init(sampleRate);
-        _blockRms.Clear(); _blockMaxAbs.Clear();
-        _sumSqInBlock = _maxAbsInBlock = 0; _samplesInBlock = 0;
-        AddChunk(samples);
-        var result = GetResult(claimedBitDepth);
-        return (result.IsSuspicious, result.Verdict, result.NoiseFloorDb);
-    }
-
-    public BitDepthResult ValidateStereo(StereoBuffer buffer, int claimedBitDepth)
-    {
-        if (!_initialized) Init(buffer.SampleRate);
-        _blockRms.Clear(); _blockMaxAbs.Clear();
-        _sumSqInBlock = _maxAbsInBlock = 0; _samplesInBlock = 0;
-        int n = buffer.Length;
-        for (int i = 0; i < n; i++)
-        {
-            float s = buffer.IsStereo ? (buffer.Left[i] + buffer.Right[i]) * 0.5f : buffer.Left[i];
-            _sumSqInBlock += s * s;
-            float abs = Math.Abs(s);
-            if (abs > _maxAbsInBlock) _maxAbsInBlock = abs;
-            if (++_samplesInBlock >= _blockSize) FlushBlock();
-        }
-        var result = GetResult(claimedBitDepth);
-        bool lsbZero = CheckLsbZeroPaddedFull(buffer, claimedBitDepth);
-        return new BitDepthResult(result.IsSuspicious || lsbZero, lsbZero
-            ? $"Claimed {claimedBitDepth}-bit but lower 8 bits are zero-padded (effective {result.EffectiveBitDepth}-bit)."
-            : result.Verdict, result.NoiseFloorDb, lsbZero, result.EffectiveBitDepth);
-    }
-
-    private static bool CheckLsbZeroPaddedFull(StereoBuffer buffer, int claimedBitDepth)
-    {
-        if (claimedBitDepth != 24 || buffer.Length < 1000) return false;
-        int n = buffer.Length;
-        int blockSize = n / 100;
-
-        // Check each channel independently — averaging can mask zero-padding
-        bool lsbZeroL = CheckLsbZeroPaddedChannel(buffer.Left, n, blockSize);
-        bool lsbZeroR = buffer.IsStereo ? CheckLsbZeroPaddedChannel(buffer.Right, n, blockSize) : lsbZeroL;
-        return lsbZeroL && lsbZeroR;
-    }
-
-    private static bool CheckLsbZeroPaddedChannel(float[] channel, int n, int blockSize)
-    {
-        // Find loud blocks threshold from sorted maxAbs
-        var sortedBlocks = new List<double>();
-        for (int pos = 0; pos + blockSize <= n; pos += blockSize)
-        {
-            double maxAbs = 0;
-            for (int i = pos; i < pos + blockSize; i++)
-            {
-                double abs = Math.Abs(channel[i]);
-                if (abs > maxAbs) maxAbs = abs;
-            }
             sortedBlocks.Add(maxAbs);
         }
         sortedBlocks.Sort((a, b) => b.CompareTo(a));
@@ -179,23 +123,113 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
         double loudThreshold = sortedBlocks[Math.Min(loudCount - 1, sortedBlocks.Count - 1)];
 
         int zeroCount = 0, totalCount = 0;
+        var constantValues = new Dictionary<int, int>();
+        for (int pos = 0; pos + blockSize <= samples.Length; pos += blockSize)
+        {
+            double maxAbs = 0;
+            for (int i = pos; i < pos + blockSize; i++)
+                maxAbs = Math.Max(maxAbs, Math.Abs(samples[i]));
+            if (maxAbs < loudThreshold) continue;
+            for (int i = pos; i < pos + blockSize; i++)
+            {
+                int sample24 = (int)(samples[i] * 8388607.0 + 0.5 * Math.Sign(samples[i]));
+                int lsb = sample24 & 0xFF;
+                if (lsb == 0) zeroCount++;
+                if (constantValues.ContainsKey(lsb)) constantValues[lsb]++;
+                else constantValues[lsb] = 1;
+                totalCount++;
+            }
+        }
+
+        if (totalCount < 100) return false;
+
+        // 95% zero LSBs => zero-padded
+        if ((double)zeroCount / totalCount > 0.95) return true;
+
+        // 95% same non-zero LSB value => constant dither / naive upscale
+        foreach (var kv in constantValues)
+        {
+            if (kv.Key != 0 && (double)kv.Value / totalCount > 0.95)
+                return true;
+        }
+
+        return false;
+    }
+
+    public BitDepthResult ValidateStereo(StereoBuffer buffer, int claimedBitDepth)
+    {
+        Reset();
+        if (!buffer.IsStereo)
+            AddChunk(buffer.Left);
+        else
+        {
+            int n = buffer.Length;
+            AddChunk(ToMono(buffer.Left, buffer.Right, n));
+        }
+        var result = GetResult(claimedBitDepth);
+        bool lsbZero = CheckLsbZeroPaddedFull(buffer, claimedBitDepth);
+        return new BitDepthResult(
+            result.IsSuspicious || lsbZero,
+            lsbZero
+                ? $"Claimed {claimedBitDepth}-bit but lower 8 bits are zero-padded (or constant dither pattern)."
+                : result.Verdict,
+            result.NoiseFloorDb, lsbZero, result.EffectiveBitDepth);
+    }
+
+    private static float[] ToMono(float[] left, float[] right, int n)
+    {
+        var mono = new float[n];
+        for (int i = 0; i < n; i++) mono[i] = (left[i] + right[i]) * 0.5f;
+        return mono;
+    }
+
+    private static bool CheckLsbZeroPaddedFull(StereoBuffer buffer, int claimedBitDepth)
+    {
+        if (claimedBitDepth != 24 || buffer.Length < 1000) return false;
+        int n = buffer.Length;
+        int blockSize = Math.Max(100, n / 100);
+        bool lsbL = CheckLsbZeroPaddedChannel(buffer.Left, n, blockSize);
+        bool lsbR = buffer.IsStereo ? CheckLsbZeroPaddedChannel(buffer.Right, n, blockSize) : lsbL;
+        return lsbL && lsbR;
+    }
+
+    private static bool CheckLsbZeroPaddedChannel(float[] channel, int n, int blockSize)
+    {
+        var sortedBlocks = new List<double>();
         for (int pos = 0; pos + blockSize <= n; pos += blockSize)
         {
             double maxAbs = 0;
             for (int i = pos; i < pos + blockSize; i++)
-            {
-                double abs = Math.Abs(channel[i]);
-                if (abs > maxAbs) maxAbs = abs;
-            }
+                maxAbs = Math.Max(maxAbs, Math.Abs(channel[i]));
+            sortedBlocks.Add(maxAbs);
+        }
+        sortedBlocks.Sort((a, b) => b.CompareTo(a));
+        int loudCount = Math.Max(1, sortedBlocks.Count / 10);
+        double loudThreshold = sortedBlocks[Math.Min(loudCount - 1, sortedBlocks.Count - 1)];
+
+        int zeroCount = 0, totalCount = 0;
+        var constantValues = new Dictionary<int, int>();
+        for (int pos = 0; pos + blockSize <= n; pos += blockSize)
+        {
+            double maxAbs = 0;
+            for (int i = pos; i < pos + blockSize; i++)
+                maxAbs = Math.Max(maxAbs, Math.Abs(channel[i]));
             if (maxAbs < loudThreshold) continue;
             for (int i = pos; i < pos + blockSize; i++)
             {
                 int sample24 = (int)(channel[i] * 8388607.0 + 0.5 * Math.Sign(channel[i]));
-                if ((sample24 & 0xFF) == 0) zeroCount++;
+                int lsb = sample24 & 0xFF;
+                if (lsb == 0) zeroCount++;
+                if (constantValues.ContainsKey(lsb)) constantValues[lsb]++;
+                else constantValues[lsb] = 1;
                 totalCount++;
             }
         }
-        return totalCount > 100 && (double)zeroCount / totalCount > 0.95;
+        if (totalCount < 100) return false;
+        if ((double)zeroCount / totalCount > 0.95) return true;
+        foreach (var kv in constantValues)
+            if (kv.Key != 0 && (double)kv.Value / totalCount > 0.95) return true;
+        return false;
     }
 }
 
