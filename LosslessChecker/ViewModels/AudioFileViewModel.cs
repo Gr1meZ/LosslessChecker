@@ -200,7 +200,7 @@ public partial class AudioFileViewModel : ObservableObject
             SizePerMinuteColor = GetBrush("AccentBrush");
 
         bool match = string.Equals(r.ClaimedType, r.DetectedType, StringComparison.OrdinalIgnoreCase)
-            || (r.DetectedType.StartsWith("LOSSLESS") && r.ClaimedType is "FLAC" or "ALAC" or "WAV")
+            || (r.DetectedType.StartsWith("LOSSLESS") && (r.ClaimedType == "FLAC" || r.ClaimedType == "ALAC" || r.ClaimedType == "WAV"))
             || (r.DetectedType.StartsWith("HI-RES") && r.ClaimedType.StartsWith("HI-RES"));
         DetectedTypeColor = match ? GetBrush("LosslessGreenBrush") : GetBrush("FakeRedBrush");
 
@@ -631,7 +631,7 @@ public partial class AudioFileViewModel : ObservableObject
             Value = $"{r.QualityScorePercent:F0}%",
             Status = qualStatus,
             StatusColor = qualColor,
-            Description = "Взвешенная оценка качества мастеринга (0–100%). DR (вес 25), клиппинг (20), True Peak (13), LUFS (15), DC Offset (8), фаза (12), битность (5).",
+            Description = "Взвешенная оценка качества мастеринга (0–100%). Учитывает клиппинг, True Peak, LUFS, DC Offset, фазу.",
             Typical = "70–100% — отличный мастеринг\n40–69% — средний мастеринг\n<40% — плохой мастеринг"
         });
 

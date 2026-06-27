@@ -315,22 +315,29 @@ public class CutoffDetector
             return (bw, dt);
         }
 
-        // 3. Lossless (no artifacts, no brickwall at encoder frequencies)
-        if (shelfType == "Natural" || (artifactLevel == "None" && shelfType == "Filtered"))
+        // 3. Lossless — any file without lossy compression artifacts
+        // (not MP3, not AAC, not Hi-Res, not fake 24-bit, not transcoded)
+        if (!isHiRes)
         {
-            string bw = cutoffHz >= nyquist * 0.92 ? "Full Range" : $"{cutoffHz / 1000:F0}kHz";
-            string dt;
-            if (isCdAligned && sampleRate == 44100)
-                dt = "LOSSLESS (CD)";
-            else if (bitDepth > 16 && !lsbZeroPadded)
-                dt = "LOSSLESS 24bit";
-            else
-                dt = "LOSSLESS (WEB)";
+            bool hasLossyArtifacts = (artifactLevel == "Strong" || artifactLevel == "Medium") 
+                && (hasSpectralHoles || shelfType == "Brickwall");
+            
+            if (!hasLossyArtifacts || shelfType == "Natural")
+            {
+                string bw = cutoffHz >= nyquist * 0.92 ? "Full Range" : $"{cutoffHz / 1000:F0}kHz";
+                string dt;
+                if (isCdAligned && sampleRate == 44100)
+                    dt = "LOSSLESS (CD)";
+                else if (bitDepth > 16 && !lsbZeroPadded)
+                    dt = "LOSSLESS 24bit";
+                else
+                    dt = "LOSSLESS (WEB)";
 
-            if (cutoffHz < nyquist * 0.90 && artifactLevel == "None")
-                dt = "LOSSLESS (Mastered LPF)";
+                if (cutoffHz < nyquist * 0.90 && artifactLevel == "None")
+                    dt = "LOSSLESS (Mastered LPF)";
 
-            return (bw, dt);
+                return (bw, dt);
+            }
         }
 
         // 4. MP3 / AAC via encoder match

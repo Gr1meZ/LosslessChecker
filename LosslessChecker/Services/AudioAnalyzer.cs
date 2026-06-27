@@ -19,4 +19,6 @@ public class AudioAnalyzer
 
         return result;
     }
+
+    public void ClearCache() => _cache.Clear();
 }

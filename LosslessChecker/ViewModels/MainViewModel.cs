@@ -43,18 +43,6 @@ public partial class MainViewModel : ObservableObject
     private string _searchQuery = "";
 
     [ObservableProperty]
-    private bool _showKeep = true;
-
-    [ObservableProperty]
-    private bool _showInvestigate = true;
-
-    [ObservableProperty]
-    private bool _showReplace = true;
-
-    [ObservableProperty]
-    private bool _showMp3 = true;
-
-    [ObservableProperty]
     private string _sortColumn = "FileName";
 
     [ObservableProperty]
@@ -85,13 +73,7 @@ public partial class MainViewModel : ObservableObject
                 return false;
         }
 
-        bool matchesVerdict =
-            ((f.VerdictLabel == "LOSSLESS" || f.VerdictLabel == "HI-RES") && ShowKeep) ||
-            (f.VerdictLabel == "NOT SURE" && ShowInvestigate) ||
-            ((f.VerdictLabel == "REPLACE" || f.VerdictLabel.StartsWith("MP3") || f.VerdictLabel.StartsWith("AAC")) && ShowReplace) ||
-            ((f.VerdictLabel.StartsWith("MP3") || f.VerdictLabel.StartsWith("AAC")) && ShowMp3);
-
-        return matchesVerdict;
+        return true;
     }
 
     [ObservableProperty]
@@ -229,10 +211,6 @@ public partial class MainViewModel : ObservableObject
     }
 
     partial void OnSearchQueryChanged(string value) => ApplyFilters();
-    partial void OnShowKeepChanged(bool value) => ApplyFilters();
-    partial void OnShowInvestigateChanged(bool value) => ApplyFilters();
-    partial void OnShowReplaceChanged(bool value) => ApplyFilters();
-    partial void OnShowMp3Changed(bool value) => ApplyFilters();
 
     [RelayCommand]
     private async Task SelectFolder(string? folderPath)
@@ -309,6 +287,34 @@ public partial class MainViewModel : ObservableObject
         if (ext == ".csv") ExportCsv(dialog.FileName, data);
         else if (ext == ".json") ExportJson(dialog.FileName, data);
         else if (ext == ".html") ExportHtml(dialog.FileName, data);
+    }
+
+    [RelayCommand]
+    private void ClearTable()
+    {
+        Files.Clear();
+        ArtistGroups.Clear();
+        _selectionFilter = null;
+        FilesView.Refresh();
+        SelectedGroup = null;
+        SelectedFile = null;
+        IsSpectrumVisible = false;
+        ProcessedFiles = 0;
+        TotalFiles = 0;
+        ErrorCount = 0;
+        KeepCount = 0;
+        InvestigateCount = 0;
+        ReplaceCount = 0;
+        Progress = 0;
+        CurrentlyProcessing = "";
+        ShowWelcome = true;
+        UpdateSummary();
+    }
+
+    [RelayCommand]
+    private void ClearCache()
+    {
+        _analyzer.ClearCache();
     }
 
     private static void ExportCsv(string path, List<AudioFileViewModel> data)

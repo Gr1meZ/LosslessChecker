@@ -1,3 +1,14 @@
+# Task 11: JSON Cache Implementation
+
+**Files:**
+- Create: `LosslessChecker/Services/AnalysisCache.cs`
+- Modify: `LosslessChecker/Services/AudioAnalyzer.cs`
+
+## Step 1: Create AnalysisCache.cs
+
+New file `LosslessChecker/Services/AnalysisCache.cs`:
+
+```csharp
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -61,10 +72,49 @@ public class AnalysisCache
         }
         catch { }
     }
+}
+```
 
-    public void Clear()
+## Step 2: Wire cache into AudioAnalyzer.cs
+
+Replace the entire `AudioAnalyzer.cs` content:
+
+```csharp
+using LosslessChecker.Models;
+
+namespace LosslessChecker.Services;
+
+public class AudioAnalyzer
+{
+    private readonly AudioPipeline _pipeline = new();
+    private readonly AnalysisCache _cache = new();
+
+    public AnalysisResult Analyze(AudioFileInfo fileInfo, CancellationToken ct = default)
     {
-        _cache.Clear();
-        try { File.Delete(_cachePath); } catch { }
+        var fileInfo2 = new System.IO.FileInfo(fileInfo.FilePath);
+        if (fileInfo2.Exists && _cache.TryGet(fileInfo.FilePath, fileInfo2.Length, fileInfo2.LastWriteTime, out var cached))
+            return cached!;
+
+        var result = _pipeline.Analyze(fileInfo, ct);
+        if (fileInfo2.Exists && result.AnalysisStatus == AnalysisStatus.Completed)
+            _cache.Store(fileInfo.FilePath, fileInfo2.Length, fileInfo2.LastWriteTime, result);
+
+        return result;
     }
 }
+```
+
+## Step 3: Build and test
+
+Run: `dotnet build`
+Expected: Build succeeds.
+
+Run: `dotnet test`
+Expected: All tests pass.
+
+## Step 4: Commit
+
+```bash
+git add LosslessChecker/Services/AnalysisCache.cs LosslessChecker/Services/AudioAnalyzer.cs
+git commit -m "feat: add JSON analysis cache to skip re-analysis of unchanged files"
+```

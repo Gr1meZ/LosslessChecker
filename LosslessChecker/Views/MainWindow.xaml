@@ -137,6 +137,8 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Button Grid.Column="0" Content="📁 Папка" Command="{Binding SelectFolderCommand}"
@@ -151,18 +153,24 @@
                 <Button Grid.Column="3" Content="➕ Добавить" Command="{Binding AddFilesCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
                         Width="100" Height="34" Margin="0,0,6,0"/>
-                <Button Grid.Column="4" Content="📊 Экспорт" Command="{Binding ExportCommand}"
+                <Button Grid.Column="4" Content="🗑 Таблица" Command="{Binding ClearTableCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="100" Height="34" Margin="0,0,6,0"/>
+                <Button Grid.Column="5" Content="🧹 Кэш" Command="{Binding ClearCacheCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="80" Height="34" Margin="0,0,6,0"/>
+                <Button Grid.Column="6" Content="📊 Экспорт" Command="{Binding ExportCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
                         Width="90" Height="34" Margin="0,0,6,0"/>
-                <Grid Grid.Column="5" Margin="20,0,0,0">
+                <Grid Grid.Column="7" Margin="20,0,0,0">
                     <ProgressBar Value="{Binding Progress}" Minimum="0" Maximum="100"
-                                 Height="16" VerticalAlignment="Center"
-                                 Foreground="{DynamicResource AccentBrush}"
+                                 Height="18" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource LosslessGreenBrush}"
                                  Background="{DynamicResource BgTertiaryBrush}"/>
                     <TextBlock Text="{Binding ProgressText}"
-                               HorizontalAlignment="Center" VerticalAlignment="Bottom"
-                               FontSize="10" Foreground="{DynamicResource FgMutedBrush}"
-                               Margin="0,0,0,-2"/>
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontSize="11" FontWeight="Bold"
+                               Foreground="White"/>
                 </Grid>
             </Grid>
         </Border>
@@ -220,18 +228,6 @@
                              Background="{DynamicResource BgSecondaryBrush}" Foreground="{DynamicResource FgPrimaryBrush}"
                              BorderBrush="{DynamicResource BorderBrush}" FontSize="11"
                              ToolTip="Поиск по названию, артисту, альбому"/>
-                    <ToggleButton Content="LOSSLESS" IsChecked="{Binding ShowKeep}" Width="70"
-                                   Style="{StaticResource FilterToggleStyle}"
-                                   Foreground="{DynamicResource LosslessGreenBrush}" FontSize="10" Margin="2,0"/>
-                    <ToggleButton Content="NOT SURE" IsChecked="{Binding ShowInvestigate}" Width="70"
-                                   Style="{StaticResource FilterToggleStyle}"
-                                   Foreground="{DynamicResource SuspiciousAmberBrush}" FontSize="10" Margin="2,0"/>
-                    <ToggleButton Content="REPLACE" IsChecked="{Binding ShowReplace}" Width="65"
-                                   Style="{StaticResource FilterToggleStyle}"
-                                   Foreground="{DynamicResource FakeRedBrush}" FontSize="10" Margin="2,0"/>
-                    <ToggleButton Content="MP3" IsChecked="{Binding ShowMp3}" Width="45"
-                                   Style="{StaticResource FilterToggleStyle}"
-                                   Foreground="#f9e2af" FontSize="10" Margin="2,0"/>
                 </StackPanel>
 
                 <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="0">
@@ -248,8 +244,8 @@
                       Sorting="DataGrid_Sorting"
                       SelectionChanged="DataGrid_SelectionChanged">
                 <DataGrid.Resources>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#818cf8"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#0f0f1a"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#4a6cf7"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
                     <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#334155"/>
                     <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#e2e8f0"/>
                 </DataGrid.Resources>
@@ -272,7 +268,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="Название" Binding="{Binding FileName}" Width="180"
+                    <DataGridTextColumn Header="Название" Binding="{Binding FileName}" Width="*"
                                         SortMemberPath="FileName" SortDirection="Ascending">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
@@ -300,28 +296,34 @@
                             <Style TargetType="TextBlock">
                                 <Setter Property="Foreground" Value="{Binding SizePerMinuteColor}"/>
                                 <Setter Property="FontFamily" Value="Consolas"/>
-                                <Setter Property="FontSize" Value="10"/>
                                 <Setter Property="HorizontalAlignment" Value="Center"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
                     <DataGridTextColumn Header="DR" Binding="{Binding DynamicRange, StringFormat={}{0:F0}}" Width="40"
                                         SortMemberPath="DynamicRange"/>
+                    <DataGridTextColumn Header="Кач-во" Binding="{Binding QualityScorePercent, StringFormat={}{0:F0}%}" Width="55"
+                                        SortMemberPath="QualityScorePercent">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{Binding QualityScorePercent, Converter={StaticResource ScoreToColor}}"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                                <Setter Property="FontSize" Value="12"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
                     <DataGridTextColumn Header="Заявлен" Binding="{Binding ClaimedType}" Width="80"
                                         SortMemberPath="ClaimedType">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
-                                <Setter Property="FontSize" Value="10"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="По анализу" Binding="{Binding DetectedType}" Width="100"
+                    <DataGridTextColumn Header="По анализу" Binding="{Binding DetectedType}" Width="Auto" MinWidth="100"
                                         SortMemberPath="DetectedType">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Foreground" Value="{Binding DetectedTypeColor}"/>
-                                <Setter Property="FontWeight" Value="Bold"/>
-                                <Setter Property="FontSize" Value="10"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>

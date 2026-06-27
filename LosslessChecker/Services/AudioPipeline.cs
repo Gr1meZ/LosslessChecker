@@ -22,16 +22,28 @@ public class AudioPipeline
 
     private static string GetClaimedType(string filePath, int sampleRate)
     {
-        var ext = System.IO.Path.GetExtension(filePath).ToLowerInvariant();
-        string type = ext switch
+        var ext = Path.GetExtension(filePath).ToLowerInvariant();
+        string type;
+        if (ext == ".m4a")
         {
-            ".mp3" => "MP3",
-            ".m4a" => "AAC",
-            ".flac" => "FLAC",
-            ".wav" => "WAV",
-            ".alac" => "ALAC",
-            _ => "Unknown"
-        };
+            try
+            {
+                var info = Mp4CodecReader.DetectCodec(filePath);
+                type = info.Codec == "alac" ? "ALAC" : "AAC";
+            }
+            catch { type = "AAC"; }
+        }
+        else
+        {
+            type = ext switch
+            {
+                ".mp3" => "MP3",
+                ".flac" => "FLAC",
+                ".wav" => "WAV",
+                ".alac" => "ALAC",
+                _ => "Unknown"
+            };
+        }
         if (sampleRate >= 88200)
             type = $"HI-RES {sampleRate / 1000:F0}k";
         return type;
