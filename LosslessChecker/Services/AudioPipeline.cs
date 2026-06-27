@@ -315,6 +315,7 @@ public class AudioPipeline
                 IsCdAligned = containerResult.IsCdAligned,
                 FlacIntegrityOk = containerResult.FlacIntegrityOk,
                 ContainerSource = containerResult.Source,
+                IsCorrupted = containerResult.IsCorrupted,
                 IsMqa = containerResult.IsMqa,
                 MqaDetails = containerResult.MqaDetails,
                 IsHdcd = containerResult.IsHdcd,

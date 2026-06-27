@@ -25,6 +25,7 @@ public record AnalysisResult
     public bool HasPreEcho { get; init; }
     public int PreEchoCount { get; init; }
     public bool HasSpectralHoles { get; init; }
+    public bool HasCodecSilence { get; init; }
 
     public double SamplePeakDb { get; init; }
     public double TruePeakDb { get; init; }
@@ -89,6 +90,12 @@ public record AnalysisResult
 
     public int ActualBitrate { get; init; }
 
+    public double AverageBitrateKbps { get; init; }
+    public double CompressionRatio { get; init; }
+    public double MinFrameBitrateKbps { get; init; }
+    public double MaxFrameBitrateKbps { get; init; }
+    public bool IsSuspiciousBitrate { get; init; }
+
     public string ClaimedType { get; init; } = "";
     public string DetectedType { get; init; } = "";
     public string Bandwidth { get; init; } = "";
@@ -97,6 +104,12 @@ public record AnalysisResult
 
     public AnalysisStatus AnalysisStatus { get; init; } = AnalysisStatus.Pending;
     public string? ErrorMessage { get; init; }
+
+    public bool IsFakeStereo { get; init; }
+    public bool IsCorrupted { get; init; }
+    public bool HasAbruptEdges { get; init; }
+    public bool ReplayGainMismatch { get; init; }
+    public double ReplayGainTrackDb { get; init; }
 
     public float[]? SpectrogramDb { get; init; }
     public int SpectrogramWidth { get; init; }
