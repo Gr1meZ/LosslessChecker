@@ -44,7 +44,7 @@ public class UpscaleDetector
 
         double maxHfDb = 20.0 * Math.Log10(Math.Max(maxHf, 1e-10) / peakBelow);
 
-        if (maxHfDb < -50)
+        if (maxHfDb < -60)
         {
             bool isDither = HasDitherSignature(averagedSpectrum, startBin);
             return (true,
@@ -54,7 +54,7 @@ public class UpscaleDetector
                 maxHfDb);
         }
 
-        if (maxHfDb < -30)
+        if (maxHfDb < -40)
         {
             return (true,
                 $"Weak HF content above 22kHz ({maxHfDb:F0} dB). Questionable Hi-Res authenticity.",

@@ -288,7 +288,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="Формат" Binding="{Binding Format}" Width="60"
                                         SortMemberPath="Format"/>
-                    <DataGridTextColumn Header="Битрейт" Binding="{Binding ActualBitrate, StringFormat={}{0} kbps}" Width="62"
+                    <DataGridTextColumn Header="Битрейт" Width="65"
                                         SortMemberPath="ActualBitrate">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
@@ -296,8 +296,11 @@
                                 <Setter Property="HorizontalAlignment" Value="Right"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
+                        <DataGridTextColumn.Binding>
+                            <Binding Path="ActualBitrate" StringFormat="{}{0}" FallbackValue="—"/>
+                        </DataGridTextColumn.Binding>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="Спектр" Binding="{Binding BitrateSpectrum, StringFormat={}{0} kbps}" Width="62"
+                    <DataGridTextColumn Header="Спектр" Width="65"
                                         SortMemberPath="BitrateSpectrum">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
@@ -307,6 +310,9 @@
                                 <Setter Property="HorizontalAlignment" Value="Right"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
+                        <DataGridTextColumn.Binding>
+                            <Binding Path="BitrateSpectrum" FallbackValue="—"/>
+                        </DataGridTextColumn.Binding>
                     </DataGridTextColumn>
                     <DataGridTextColumn Header="МБ/мин" Binding="{Binding SizePerMinute}" Width="55"
                                         SortMemberPath="SizePerMinute">
@@ -332,7 +338,7 @@
                     </DataGridTextColumn>
                     <DataGridTextColumn Header="Заявлен" Binding="{Binding ClaimedType}" Width="70"
                                         SortMemberPath="ClaimedType"/>
-                    <DataGridTextColumn Header="По анализу" Binding="{Binding DetectedType}" Width="Auto" MinWidth="90"
+                    <DataGridTextColumn Header="По анализу" Binding="{Binding DetectedType}" Width="120"
                                         SortMemberPath="DetectedType">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">

@@ -9,8 +9,8 @@ public class AuthenticityToColorConverter : IValueConverter
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         string key = value is string s
-            ? s.StartsWith("LOSSLESS") || s.StartsWith("HI-RES") ? "LosslessGreenBrush"
-            : s.StartsWith("MP3") || s.StartsWith("AAC") || s.StartsWith("UPSCALE") || s.StartsWith("FAKE") ? "FakeRedBrush"
+            ? s == "TRUE" || s.StartsWith("LOSSLESS") || s.StartsWith("HI-RES") ? "LosslessGreenBrush"
+            : s.StartsWith("MP3") || s.StartsWith("AAC") || s == "FALSE" || s.StartsWith("UPSCALE") || s.StartsWith("FAKE") || s.StartsWith("LOSSY") ? "FakeRedBrush"
             : s.StartsWith("UNCERTAIN") ? "SuspiciousAmberBrush"
             : "NeutralGrayBrush"
             : "NeutralGrayBrush";

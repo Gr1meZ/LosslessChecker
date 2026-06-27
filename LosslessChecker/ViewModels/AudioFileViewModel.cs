@@ -75,31 +75,8 @@ public partial class AudioFileViewModel : ObservableObject
 
     public string ActualBitrateDisplay => ActualBitrate > 0 ? $"{ActualBitrate}" : "—";
 
-    public System.Windows.Media.Brush BitrateDiscrepancyColor
-    {
-        get
-        {
-            var headerBr = Mp3Bitrate > 0 ? Mp3Bitrate : AacBitrate > 0 ? AacBitrate : 0;
-            if (headerBr <= 0 || ActualBitrate <= 0)
-                return System.Windows.Application.Current.TryFindResource("FgMutedBrush") as System.Windows.Media.Brush
-                    ?? System.Windows.Media.Brushes.Gray;
 
-            double ratio = (double)headerBr / ActualBitrate;
-            if (ratio > 2.5)
-                return System.Windows.Application.Current.TryFindResource("FakeRedBrush") as System.Windows.Media.Brush
-                    ?? System.Windows.Media.Brushes.Red;
-            if (ratio > 1.5)
-                return System.Windows.Application.Current.TryFindResource("SuspiciousAmberBrush") as System.Windows.Media.Brush
-                    ?? System.Windows.Media.Brushes.Orange;
-            if (ratio > 1.1 || ratio < 0.9)
-                return System.Windows.Application.Current.TryFindResource("SuspiciousAmberBrush") as System.Windows.Media.Brush
-                    ?? System.Windows.Media.Brushes.Orange;
-            return System.Windows.Application.Current.TryFindResource("LosslessGreenBrush") as System.Windows.Media.Brush
-                ?? System.Windows.Media.Brushes.Green;
-        }
-    }
-
-    public string VerdictLabel => Decision switch
+    public string VerdictLabel => DetectedType.Length > 0 ? DetectedType : Decision switch
     {
         "KEEP" => SampleRate >= 88200 && HiResScorePercent >= 70 ? "HI-RES" : "LOSSLESS",
         "KEEP (poor master)" => "LOSSLESS",
@@ -112,15 +89,7 @@ public partial class AudioFileViewModel : ObservableObject
         _ => Decision
     };
 
-    public string VerdictDisplayText => VerdictLabel switch
-    {
-        "LOSSLESS" => "✅ LOSSLESS",
-        "HI-RES" => "✅ HI-RES",
-        "NOT SURE" => "⚠ NOT SURE",
-        "REPLACE" => "❌ REPLACE",
-        _ => VerdictLabel.StartsWith("MP3") || VerdictLabel.StartsWith("AAC")
-            ? $"❌ {VerdictLabel}" : VerdictLabel
-    };
+    public string VerdictDisplayText => VerdictLabel;
 
     // Detail panel: metric items collection
     [ObservableProperty] private ObservableCollection<MetricItem> _metricItems = new();
@@ -185,15 +154,17 @@ public partial class AudioFileViewModel : ObservableObject
         ActualBitrate = r.ActualBitrate;
         ClaimedType = r.ClaimedType;
         DetectedType = r.DetectedType;
-        // Bitrate spectrum: expected bitrate from cutoff analysis
+        // Bitrate spectrum: expected bitrate from cutoff analysis (0 = no brickwall detected = no codec)
         BitrateSpectrum = LosslessChecker.Services.CutoffDetector.MapCutoffToBitrate(
             r.CutoffFrequency, r.ShelfType, r.ActualBitrate, r.SampleRate);
 
-        // Green if spectrum >= actual, red if spectrum significantly lower (implies transcode)
-        if (BitrateSpectrum >= r.ActualBitrate * 0.85)
+        // Color: only red if brickwall was detected AND spectrum bitrate < actual bitrate
+        if (BitrateSpectrum == 0)
             BitrateSpectrumColor = GetBrush("LosslessGreenBrush");
-        else
+        else if (BitrateSpectrum < r.ActualBitrate * 0.8)
             BitrateSpectrumColor = GetBrush("FakeRedBrush");
+        else
+            BitrateSpectrumColor = GetBrush("LosslessGreenBrush");
 
         double mbPerMin = r.DurationSeconds > 0
             ? new System.IO.FileInfo(r.FilePath).Length / (1024.0 * 1024.0) / (r.DurationSeconds / 60.0)
@@ -212,7 +183,10 @@ public partial class AudioFileViewModel : ObservableObject
         bool match = string.Equals(r.ClaimedType, r.DetectedType, StringComparison.OrdinalIgnoreCase)
             || (r.DetectedType.StartsWith("LOSSLESS") && (r.ClaimedType == "FLAC" || r.ClaimedType == "ALAC" || r.ClaimedType == "WAV"))
             || (r.DetectedType.StartsWith("HI-RES") && r.ClaimedType.StartsWith("HI-RES"));
-        DetectedTypeColor = match ? GetBrush("LosslessGreenBrush") : GetBrush("FakeRedBrush");
+        if (r.DetectedType.StartsWith("UNCERTAIN"))
+            DetectedTypeColor = GetBrush("SuspiciousAmberBrush");
+        else
+            DetectedTypeColor = match ? GetBrush("LosslessGreenBrush") : GetBrush("FakeRedBrush");
 
         if (r.SpectrogramDb is { Length: > 0 })
         {
@@ -590,16 +564,16 @@ public partial class AudioFileViewModel : ObservableObject
         // Lossless Score
         string losslessStatus = r.LosslessScore >= 85 ? "✓ Отлично" : r.LosslessScore >= 60 ? "⚠ Средне" : "✗ Плохо";
         string losslessColor = r.LosslessScore >= 85 ? "#2EA043" : r.LosslessScore >= 60 ? "#D29922" : "#CF222E";
-        string losslessLabel = r.Authenticity == "LOSSY (MP3)" ? "LOSSY (MP3)" : r.Authenticity;
+        string losslessLabel = r.DetectedType.Length > 0 ? r.DetectedType : r.Authenticity;
         items.Add(new MetricItem
         {
             Category = "Итог",
-            Name = "Подлинность",
+            Name = "Итоговый тип файла",
             Value = losslessLabel,
             Status = losslessStatus,
             StatusColor = losslessColor,
-            Description = "Оценка подлинности аудиофайла. TRUE — настоящий lossless. FALSE — фейк, пережат из lossy. UNCERTAIN — подозрительный. LOSSY (MP3) — легальный lossy-формат.",
-            Typical = "TRUE — настоящий lossless\nUNCERTAIN — подозрительный\nFALSE — фейк\nLOSSY (MP3) — MP3-файл"
+            Description = "Наше определение: какой тип файла перед вами. LOSSLESS (CD) — честный CD-рип. MP3 128/192/256/320 — lossy-файл с этим битрейтом. HI-RES 96k/192k — настоящий высокочастотный файл. UPSCALE — апконверт из низкого качества.",
+            Typical = "LOSSLESS (CD) — честный lossless\nMP3 128/320 — lossy-файл\nHI-RES 96k — настоящий Hi-Res\nUPSCALE — фейк"
         });
 
         // Hi-Res Score (only for Hi-Res files)

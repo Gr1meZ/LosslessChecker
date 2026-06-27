@@ -21,11 +21,6 @@
     <SolidColorBrush x:Key="CardBrush" Color="#252525"/>
 
     <SolidColorBrush x:Key="AccentGradientBrush" Color="#4a9eff"/>
-    <SolidColorBrush x:Key="ProgressGradientBrush" Color="#4a9eff"/>
-
-    <SolidColorBrush x:Key="VerdictGoodBrush" Color="#4ec9b0"/>
-    <SolidColorBrush x:Key="VerdictWarnBrush" Color="#cca700"/>
-    <SolidColorBrush x:Key="VerdictBadBrush" Color="#f14c4c"/>
 
     <DropShadowEffect x:Key="ShadowE1" BlurRadius="8" ShadowDepth="2" Opacity="0.3" Color="#000000"/>
     <DropShadowEffect x:Key="ShadowE2" BlurRadius="16" ShadowDepth="4" Opacity="0.4" Color="#000000"/>

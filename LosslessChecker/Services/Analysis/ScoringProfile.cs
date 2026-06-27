@@ -27,9 +27,9 @@ public class ScoringProfile
     public int SuspiciousThreshold { get; init; } = 50;
 
     // Hi-Res scoring
-    public double HfDbVeryLow { get; init; } = -50;
-    public double HfDbLow { get; init; } = -30;
-    public double HfDbMedium { get; init; } = -20;
+    public double HfDbVeryLow { get; init; } = -60;
+    public double HfDbLow { get; init; } = -40;
+    public double HfDbMedium { get; init; } = -25;
     public int HfVeryLowPenalty { get; init; } = 60;
     public int HfLowPenalty { get; init; } = 30;
     public int HfMediumPenalty { get; init; } = 10;

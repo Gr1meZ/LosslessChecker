@@ -74,20 +74,16 @@ public class CutoffDetector
 
     public static int MapCutoffToBitrate(double cutoffHz, string shelfType, int actualBitrate, int sampleRate)
     {
-        var nyquist = sampleRate / 2.0;
-        double ratio = nyquist > 0 ? cutoffHz / nyquist : 1.0;
-
         if (shelfType == "Brickwall")
         {
             if (cutoffHz <= 16500) return 128;
             if (cutoffHz <= 18500) return 192;
             if (cutoffHz <= 20000) return 256;
             if (cutoffHz <= 20500) return 320;
-            return actualBitrate;
+            return 0;
         }
 
-        // Natural or filtered = no transcode detected. Return actual bitrate as expected.
-        return actualBitrate;
+        return 0;
     }
 
     // === NEW: Derivative-based cutoff detection ===
@@ -325,16 +321,14 @@ public class CutoffDetector
         if (isHiRes)
         {
             string bw = $"Hi-Res ({sampleRate / 1000:F0}k)";
-            if (maxHfDb < -50)
-                return (bw, "UPSCALE (CD->HI-RES)");
-            string dt = maxHfDb >= -30
-                ? $"HI-RES {sampleRate / 1000:F0}k"
-                : "UNCERTAIN";
-            return (bw, dt);
+            if (maxHfDb < -60)
+                return (bw, "UPSCALE (CD→HI-RES)");
+            if (maxHfDb < -45)
+                return (bw, "UNCERTAIN");
+            return (bw, $"HI-RES {sampleRate / 1000:F0}k");
         }
 
         // 3. Lossless — any file without lossy compression artifacts
-        // (not MP3, not AAC, not Hi-Res, not fake 24-bit, not transcoded)
         if (!isHiRes)
         {
             bool hasLossyArtifacts = (artifactLevel == "Strong" || artifactLevel == "Medium") 
@@ -355,6 +349,13 @@ public class CutoffDetector
                     dt = "LOSSLESS (Mastered LPF)";
 
                 return (bw, dt);
+            }
+
+            // Has some lossy artifacts but not clearly brickwall — borderline
+            if (artifactLevel == "Weak" && shelfType != "Brickwall")
+            {
+                string bw = cutoffHz >= nyquist * 0.85 ? "Full Range" : $"{cutoffHz / 1000:F0}kHz";
+                return (bw, "UNCERTAIN");
             }
         }
 
@@ -379,13 +380,7 @@ public class CutoffDetector
             return (bw, dt);
         }
 
-        if (encoderMatch is "AAC 256" or "AAC 128")
-        {
-            string bw = cutoffHz >= 19500 ? "Full Range" : $"{cutoffHz / 1000:F0}kHz";
-            return (bw, encoderMatch);
-        }
-
-        // 5. UNCERTAIN fallback
+        // 5. UNCERTAIN fallback (truly ambiguous cases)
         return ($"{cutoffHz / 1000:F0}kHz", "UNCERTAIN");
     }
 }
