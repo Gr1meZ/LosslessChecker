@@ -10,9 +10,7 @@ public class AudioPipeline
 {
     private readonly CutoffDetector _cutoff = new();
     private readonly ArtifactDetector _artifacts = new();
-    private readonly LufsMeter _lufs = new();
     private readonly UpscaleDetector _upscale = new();
-    private readonly SpectrogramBuilder _spectro = new();
     private readonly ResamplingDetector _resampling = new();
     private readonly LosslessScorer _losslessScorer = new();
     private readonly QualityScorer _qualityScorer = new();
@@ -50,6 +48,9 @@ public class AudioPipeline
     }
 
     public AnalysisResult Analyze(AudioFileInfo fileInfo, CancellationToken ct = default)
+        => AnalyzeAsync(fileInfo, ct).GetAwaiter().GetResult();
+
+    public async Task<AnalysisResult> AnalyzeAsync(AudioFileInfo fileInfo, CancellationToken ct = default)
     {
         var result = new AnalysisResult
         {
@@ -132,8 +133,7 @@ public class AudioPipeline
 
             if (ct.IsCancellationRequested) return Cancelled(result);
 
-            var buffer = AudioDecoder.Decode(fileInfo.FilePath, ct);
-            double duration = buffer.Length / (double)buffer.SampleRate;
+            double duration = GetFileDuration(fileInfo.FilePath);
             result = result with { DurationSeconds = Math.Round(duration, 1) };
 
             int actualBitrate = 0;
@@ -198,82 +198,118 @@ public class AudioPipeline
                 };
             }
 
-            // mono is the Left channel for spectral analysis
-            var mono = buffer.Left;
+            // ========== Phase 1: Stream Phase ==========
+            var tp = new TruePeakDetector();
+            var dr = new DrMeter();
+            var dc = new DcOffsetDetector();
+            var lufs = new LufsMeter().Init(sampleRate);
+            var phase = new PhaseAnalyzer();
+            var bitDepthValidator = new BitDepthValidator();
+            var preEcho = new PreEchoDetector();
+            var spectrogram = new SpectrogramAccumulator();
+            var reservoir = new ReservoirBuffer(6);
+
+            dr.Init(sampleRate);
+            preEcho.Init(sampleRate);
+            spectrogram.Init(sampleRate, duration);
+
+            double rmsSumSq = 0;
+            long rmsCount = 0;
+
+            await foreach (var chunk in AudioDecoder.StreamChunks(fileInfo.FilePath, 10, ct))
+            {
+                if (chunk.IsLast) break;
+
+                if (chunk.IsStereo)
+                {
+                    tp.AddChunk(chunk.Left.Span, chunk.Right.Span);
+                    phase.AddChunk(chunk.Left.Span, chunk.Right.Span);
+                    dr.AddChunk(chunk.Left.Span, chunk.Right.Span);
+                    dc.AddChunk(chunk.Left.Span, chunk.Right.Span);
+                    for (int i = 0; i < chunk.FrameCount; i++)
+                    {
+                        double m = (chunk.Left.Span[i] + chunk.Right.Span[i]) * 0.5;
+                        rmsSumSq += m * m;
+                    }
+                    rmsCount += chunk.FrameCount;
+                }
+                else
+                {
+                    tp.AddChunk(chunk.Left.Span);
+                    phase.AddChunk(chunk.Left.Span);
+                    dr.AddChunk(chunk.Left.Span);
+                    dc.AddChunk(chunk.Left.Span);
+                    for (int i = 0; i < chunk.FrameCount; i++)
+                    {
+                        double s = chunk.Left.Span[i];
+                        rmsSumSq += (double)s * s;
+                    }
+                    rmsCount += chunk.FrameCount;
+                }
+                lufs.AddChunk(chunk.Left.Span);
+                bitDepthValidator.AddChunk(chunk.Left.Span);
+                preEcho.AddChunk(chunk.Left.Span);
+                spectrogram.AddChunk(chunk);
+                reservoir.AddChunk(chunk);
+            }
+
+            if (ct.IsCancellationRequested) return Cancelled(result);
+
+            var tpResult = tp.GetResult();
+            var lufsResult = lufs.GetResult();
+            var drResult = dr.GetResult();
+            var dcResult = dc.GetResult();
+            var bitResult = bitDepthValidator.GetResult(bitDepth);
+            var (hasPreEcho, preEchoCount) = preEcho.GetResult();
+            double overallRmsDb = rmsCount > 0
+                ? Math.Round(20.0 * Math.Log10(Math.Max(Math.Sqrt(rmsSumSq / rmsCount), 1e-10)), 1)
+                : -200;
+
+            // ========== Phase 2: Post-Stream ==========
+            var spectroData = spectrogram.Finalize();
+            var reservoirChunks = reservoir.SelectedChunks;
+            var mono = ConcatReservoir(reservoirChunks);
 
             var (cutoffHz, cutoffSlope, spectrum) = _cutoff.DetectFull(mono, sampleRate);
-            var (encoderMatch, shelfType) = _cutoff.ClassifyCutoff(cutoffHz, cutoffSlope, sampleRate);
+
+            var vinylResult = _vinyl.Detect(spectrum, sampleRate, mono);
+            var (encoderMatch, shelfType) = _cutoff.ClassifyCutoff(cutoffHz, cutoffSlope, sampleRate, vinylResult.IsVinylRip);
+
+            var containerResult = _container.Analyze(fileInfo.FilePath, mono, sampleRate);
             bool isFakeHiRes = _cutoff.IsFakeHiRes(cutoffHz, shelfType, sampleRate);
 
-            if (ct.IsCancellationRequested) return Cancelled(result);
+            var (bandwidth, detectedType) = CutoffDetector.ClassifyBandwidth(
+                cutoffHz, shelfType, sampleRate, false, "None",
+                false, 0, bitResult.LsbZeroPadded,
+                bitResult.EffectiveBitDepth, bitDepth, containerResult.IsCdAligned,
+                containerResult.IsMqa, containerResult.IsHdcd,
+                tpResult.ClippingPercent > 0, encoderMatch);
 
-            // ========== Phase 2: Parallel — all independent analyzers ==========
-            // Each analyzer reads shared read-only data (buffer, mono, spectrum)
-            // and creates its own FFT instances — fully thread-safe.
-            (bool hasArtifacts, string artifactLevel, string artifactType) artifactResult = default;
-            TruePeakResult tpResult = null!;
-            LufsResult lufsResult = null!;
-            DrResult drResult = null!;
-            DcOffsetResult dcResult = null!;
-            PhaseResult phaseResult = null!;
-            BitDepthResult bitResult = null!;
-            SpectrogramData spectroData = null!;
-            bool upscaleDetected = false;
-            string upscaleVerdict = "";
-            double maxHfDb = 0;
-            VinylResult vinylResult = null!;
-            ContainerResult containerResult = null!;
-            bool hasPreEcho = false;
-            int preEchoCount = 0;
-            bool hasSpectralHoles = false;
-            bool hasCodecSilence = false;
-            bool hasAbruptEdges = false;
-            ResamplingResult resamplingResult = null!;
-
-            Parallel.Invoke(new ParallelOptions { CancellationToken = ct },
-                // buffer-based (full file scan — CPU heavy, memory-bound)
-                () => tpResult = new TruePeakDetector().Analyze(buffer),
-                () => lufsResult = _lufs.Analyze(buffer),
-                () => drResult = new DrMeter().AnalyzeStereo(buffer),
-                () => dcResult = new DcOffsetDetector().Analyze(buffer),
-                () => phaseResult = new PhaseAnalyzer().Analyze(buffer),
-                () => bitResult = new BitDepthValidator().ValidateStereo(buffer, bitDepth),
-                () => spectroData = _spectro.Build(mono, sampleRate),
-
-                // mono + cutoffHz-based
-                () => artifactResult = _artifacts.Detect(mono, sampleRate, cutoffHz),
-                () =>
-                {
-                    var preEcho = new PreEchoDetector();
-                    preEcho.Init(sampleRate);
-                    preEcho.AddChunk(mono);
-                    var r = preEcho.GetResult();
-                    hasPreEcho = r.hasPreEcho;
-                    preEchoCount = r.preEchoCount;
-                },
-                () => hasAbruptEdges = _artifacts.DetectAbruptEdges(mono, sampleRate),
-                () => containerResult = _container.Analyze(fileInfo.FilePath, mono, sampleRate),
-
-                // spectrum-based (depends on Phase 1 cutoff)
-                () => { var r = _upscale.Detect(spectrum, sampleRate); upscaleDetected = r.isUpscale; upscaleVerdict = r.verdict; maxHfDb = r.maxHfDb; },
-                () => vinylResult = _vinyl.Detect(spectrum, sampleRate, mono),
-                () => hasSpectralHoles = _artifacts.DetectSpectralHoles(spectrum, sampleRate / 2.0),
-                () => hasCodecSilence = CutoffDetector.HasAbsoluteSilence(spectrum, cutoffHz, sampleRate),
-                () => resamplingResult = _resampling.DetectFromSpectrum(spectrum, sampleRate)
-            );
-
-            if (ct.IsCancellationRequested) return Cancelled(result);
-
+            var artifactResult = _artifacts.Detect(mono, sampleRate, cutoffHz);
             var hasArtifacts = artifactResult.hasArtifacts;
-            var artifactLevel = artifactResult.artifactLevel;
+            var artifactLevel = artifactResult.level;
             var artifactType = artifactResult.artifactType;
 
-            // ========== Phase 3: Sequential — lightweight aggregations ==========
-            bool isFakeStereo = new FakeStereoDetector().IsFakeStereo(buffer, phaseResult.Correlation);
-            bool isUpscale = upscaleDetected || isFakeHiRes
+            var sbrResult = _artifacts.DetectSbr(spectrum, sampleRate);
+            if (sbrResult.hasSbr && !artifactType.Contains("SBR"))
+                artifactType = string.IsNullOrEmpty(artifactType) || artifactType == "None" ? "AAC SBR" : artifactType + "+SBR";
+
+            var hasSpectralHoles = _artifacts.DetectSpectralHoles(spectrum, sampleRate / 2.0);
+            var hasCodecSilence = CutoffDetector.HasAbsoluteSilence(spectrum, cutoffHz, sampleRate);
+            var hasAbruptEdges = _artifacts.DetectAbruptEdges(mono, sampleRate);
+
+            var (isUpscaleDetected, upscaleVerdict, maxHfDb) = _upscale.Detect(spectrum, sampleRate);
+            bool isUpscale = isUpscaleDetected || isFakeHiRes
                 || (sampleRate == 48000 && shelfType == "Brickwall" && cutoffHz >= 21500 && cutoffHz <= 23000);
 
+            var resamplingResult = _resampling.DetectFromSpectrum(spectrum, sampleRate);
+
+            var phaseResult = phase.GetResult();
+
             if (ct.IsCancellationRequested) return Cancelled(result);
+
+            // ========== Phase 3: Scoring ==========
+            bool isFakeStereo = channels != 2 ? false : phaseResult.Correlation > 0.99;
 
             result = result with
             {
@@ -295,7 +331,7 @@ public class AudioPipeline
                 HasIsp = tpResult.HasIsp,
                 HasHardClipping = tpResult.ClippingPercent > 0,
                 DynamicRange = drResult.Dr,
-                OverallRmsDb = ComputeOverallRms(buffer),
+                OverallRmsDb = overallRmsDb,
                 IntegratedLufs = lufsResult.IntegratedLufs,
                 LoudnessRange = lufsResult.LoudnessRange,
                 Plr = Math.Round(Math.Max(tpResult.TruePeakDbL, tpResult.TruePeakDbR) - lufsResult.IntegratedLufs, 1),
@@ -348,25 +384,19 @@ public class AudioPipeline
                                    || (compressionRatio > 0.95 && bitDepth == 16)
             };
 
-            result = result with
-            {
-                ClaimedType = GetClaimedType(fileInfo.FilePath, sampleRate)
-            };
+            result = result with { ClaimedType = GetClaimedType(fileInfo.FilePath, sampleRate) };
 
-            var (bandwidth, detectedType) = CutoffDetector.ClassifyBandwidth(
+            // Recompute ClassifyBandwidth with actual artifact data
+            (bandwidth, detectedType) = CutoffDetector.ClassifyBandwidth(
                 cutoffHz, shelfType, sampleRate, hasArtifacts, artifactLevel,
                 hasSpectralHoles, maxHfDb, bitResult.LsbZeroPadded,
                 bitResult.EffectiveBitDepth, bitDepth, containerResult.IsCdAligned,
                 containerResult.IsMqa, containerResult.IsHdcd,
                 tpResult.ClippingPercent > 0, encoderMatch);
 
-            result = result with
-            {
-                Bandwidth = bandwidth,
-                DetectedType = detectedType
-            };
+            result = result with { Bandwidth = bandwidth, DetectedType = detectedType };
 
-            // Override detectedType for native lossy formats: always show format bitrate from cutoff
+            // Override detectedType for native lossy formats
             string ext = Path.GetExtension(fileInfo.FilePath).ToLowerInvariant();
             if (ext == ".mp3")
             {
@@ -383,7 +413,7 @@ public class AudioPipeline
                 result = result with { DetectedType = cutoffBr > 0 ? $"AAC {cutoffBr}" : "AAC" };
             }
 
-            // Override detectedType for upscaled files: show source→destination instead of raw format
+            // Override detectedType for upscaled files
             if (sampleRate >= 88200 && result.IsUpscale)
             {
                 string upscaleLabel;
@@ -399,22 +429,17 @@ public class AudioPipeline
                     upscaleLabel = "UPSCALE (SUSPICIOUS)";
                 result = result with { DetectedType = upscaleLabel };
             }
-            // Detect 44.1k→48k upscale: brickwall at ~22-24k on 48k sample rate
             else if (sampleRate == 48000 && cutoffHz > 21000 && cutoffHz <= 23000 && shelfType == "Brickwall" && maxHfDb < -40)
             {
                 result = result with { DetectedType = "UPSCALE (44.1k→48k)" };
             }
 
-            // Refine format label for M4A: if codec detection failed but audio is lossless → ALAC
+            // Refine format label for M4A
             if (result.Format.StartsWith("M4A") && (detectedType.Contains("LOSSLESS") || detectedType.Contains("HI-RES")))
             {
-                result = result with
-                {
-                    Format = $"ALAC {sampleRate / 1000.0:F0}kHz/{bitDepth}bit"
-                };
+                result = result with { Format = $"ALAC {sampleRate / 1000.0:F0}kHz/{bitDepth}bit" };
             }
 
-            // Refine ClaimedType for M4A: if detection fell back to AAC but audio is lossless → ALAC
             if (Path.GetExtension(fileInfo.FilePath).ToLowerInvariant() == ".m4a"
                 && result.ClaimedType == "AAC"
                 && (detectedType.Contains("LOSSLESS") || detectedType.Contains("HI-RES")))
@@ -422,7 +447,7 @@ public class AudioPipeline
                 result = result with { ClaimedType = "ALAC" };
             }
 
-            // Refine remaining UNCERTAIN labels using additional evidence
+            // Refine UNCERTAIN labels
             if (detectedType == "UNCERTAIN")
             {
                 string refined;
@@ -433,7 +458,7 @@ public class AudioPipeline
                 else if (!hasArtifacts && cutoffHz / (double)(sampleRate / 2) >= 0.90)
                     refined = "LOSSLESS (WEB)";
                 else
-                    refined = "UNCERTAIN"; // genuinely ambiguous, keep it
+                    refined = "UNCERTAIN";
                 if (refined != "UNCERTAIN")
                 {
                     result = result with { DetectedType = refined };
@@ -441,108 +466,48 @@ public class AudioPipeline
                 }
             }
 
-            bool isMp3 = fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
-            bool isMp3Detected = detectedType.StartsWith("MP3") || isMp3
-                || detectedType == "LOSSY (TRANSCODE)"
-                || detectedType == "UPSCALE (MP3->FLAC)";
-            bool isAacDetected = detectedType.StartsWith("AAC") || isAac;
-
-            string fileExt = Path.GetExtension(fileInfo.FilePath).ToLowerInvariant();
-            bool isTranscode = (isMp3Detected && fileExt != ".mp3") || (isAacDetected && fileExt != ".m4a" && fileExt != ".aac");
-
-            double mp3QualityScore = 0;
-            double aacQualityScore = 0;
-
-            if (isMp3Detected)
+            // CORRUPTED early exit
+            if (containerResult.IsCorrupted)
             {
-                mp3QualityScore = ComputeMp3Quality(cutoffHz, sampleRate, mp3Bitrate, actualBitrate, artifactLevel, hasSpectralHoles);
-            }
-            else if (isAacDetected)
-            {
-                aacQualityScore = ComputeAacQuality(cutoffHz, sampleRate, aacBitrate, actualBitrate, artifactLevel, hasSpectralHoles);
-            }
-
-            if (result.IsMqa)
-            {
-                result = result with { Authenticity = "MQA" };
-            }
-            else if (result.IsHdcd)
-            {
-                result = result with { Authenticity = _losslessScorer.Classify(result) };
-            }
-            else if (isTranscode)
-            {
-                result = result with
+                return result with
                 {
-                    Authenticity = isMp3Detected ? "TRANSCODE (MP3→FLAC)" : "TRANSCODE (AAC→FLAC)"
+                    AnalysisStatus = AnalysisStatus.Completed,
+                    AuthenticityScore = 0,
+                    MasteringScore = 0,
+                    Authenticity = "CORRUPTED",
+                    Decision = "CORRUPTED",
+                    QualityScorePercent = 0,
+                    QualityScore = 0,
+                    LosslessScore = 0,
+                    HiResScore = 0,
+                    StructuredReport = _verdict.Generate(result),
+                    WhyVerdict = _verdict.GenerateWhy(result),
+                    MetricsCoverage = ComputeMetricsCoverage(result)
                 };
             }
-            else if (isMp3)
-            {
-                result = result with { Authenticity = "LOSSY (MP3)" };
-            }
-            else if (isAac)
-            {
-                result = result with { Authenticity = "LOSSY (AAC)" };
-            }
-            else
-            {
-                result = result with { Authenticity = _losslessScorer.Classify(result) };
-            }
 
-            var losslessScore = result.IsMqa ? 100.0
-                : isTranscode ? 0.0
-                : isMp3Detected ? mp3QualityScore
-                : isAacDetected ? aacQualityScore
-                : _losslessScorer.Score(result);
-            var hiResScore = _losslessScorer.ScoreHiRes(result);
+            // Scoring
+            var scorer = new LosslessScorer();
+            double authScore = scorer.AuthenticityScore(result);
+            double mastScore = scorer.MasteringScore(result);
 
-            double qualityPercent;
-            string decision;
-
-            if (result.IsMqa)
-            {
-                qualityPercent = 100;
-                decision = "MQA (needs decoder)";
-            }
-            else if (isTranscode)
-            {
-                decision = "REPLACE";
-                qualityPercent = 0;
-            }
-            else if (isMp3Detected)
-            {
-                var (masterScore, _) = _qualityScorer.Score(result);
-                qualityPercent = mp3QualityScore * 0.6 + masterScore * 0.4;
-                decision = mp3QualityScore >= 70 ? "KEEP"
-                    : mp3QualityScore >= 40 ? "INVESTIGATE"
-                    : "REPLACE";
-            }
-            else if (isAacDetected)
-            {
-                var (masterScore, _) = _qualityScorer.Score(result);
-                qualityPercent = aacQualityScore * 0.6 + masterScore * 0.4;
-                decision = aacQualityScore >= 70 ? "KEEP"
-                    : aacQualityScore >= 40 ? "INVESTIGATE"
-                    : "REPLACE";
-            }
-            else
-            {
-                (qualityPercent, decision) = _qualityScorer.Score(result);
-            }
+            var (_, _, authVerdict, mastVerdict, decision) = _qualityScorer.ScoreFull(result, scorer);
 
             result = result with
             {
-                LosslessScore = Math.Round(losslessScore, 1),
-                HiResScore = Math.Round(hiResScore, 1),
-                QualityScorePercent = Math.Round(qualityPercent, 1),
-                QualityScore = (int)Math.Round(qualityPercent / 10.0),
-                MetricsCoverage = ComputeMetricsCoverage(result),
+                AuthenticityScore = Math.Round(authScore, 1),
+                MasteringScore = Math.Round(mastScore, 1),
+                AuthenticityVerdict = authVerdict,
+                MasteringVerdict = mastVerdict,
+                LosslessScore = Math.Round(authScore, 1),
+                HiResScore = Math.Round(scorer.ScoreHiRes(result), 1),
+                QualityScorePercent = Math.Round(mastScore, 1),
+                QualityScore = (int)Math.Round(mastScore / 10.0),
                 Decision = decision,
+                AnalysisStatus = AnalysisStatus.Completed,
                 StructuredReport = _verdict.Generate(result),
                 WhyVerdict = _verdict.GenerateWhy(result),
-                AnalysisStatus = AnalysisStatus.Completed,
-                Mp3QualityScore = mp3QualityScore
+                MetricsCoverage = ComputeMetricsCoverage(result)
             };
 
             return result;
@@ -749,5 +714,30 @@ public class AudioPipeline
         }
         double rms = Math.Sqrt(sumSq / n);
         return Math.Round(20.0 * Math.Log10(Math.Max(rms, 1e-10)), 1);
+    }
+
+    private static double GetFileDuration(string filePath)
+    {
+        var ext = Path.GetExtension(filePath).ToLowerInvariant();
+        using NAudio.Wave.WaveStream reader = ext switch
+        {
+            ".mp3" => new NAudio.Wave.Mp3FileReader(filePath),
+            ".wav" => new NAudio.Wave.WaveFileReader(filePath),
+            ".flac" => new NAudio.Wave.AudioFileReader(filePath),
+            ".m4a" or ".alac" => new NAudio.Wave.AudioFileReader(filePath),
+            _ => throw new InvalidOperationException("Unsupported audio format for duration reading")
+        };
+        return reader.TotalTime.TotalSeconds;
+    }
+
+    private static float[] ConcatReservoir(IReadOnlyList<float[]> chunks)
+    {
+        if (chunks.Count == 0) return Array.Empty<float>();
+        int total = 0;
+        foreach (var c in chunks) total += c.Length;
+        var result = new float[total];
+        int offset = 0;
+        foreach (var c in chunks) { Array.Copy(c, 0, result, offset, c.Length); offset += c.Length; }
+        return result;
     }
 }
