@@ -21,7 +21,7 @@ public partial class MainViewModel : ObservableObject
     private CancellationTokenSource? _cts;
 
     [ObservableProperty]
-    private ObservableCollection<AudioFileViewModel> _files = new();
+    private RangeObservableCollection<AudioFileViewModel> _files = new();
 
     private HashSet<AudioFileViewModel>? _selectionFilter;
 
@@ -37,7 +37,7 @@ public partial class MainViewModel : ObservableObject
     private bool _isProcessing;
 
     [ObservableProperty]
-    private bool _showWelcome = true;
+    private bool _showWelcome = false;
 
     [ObservableProperty]
     private string _searchQuery = "";
@@ -307,7 +307,6 @@ public partial class MainViewModel : ObservableObject
         ReplaceCount = 0;
         Progress = 0;
         CurrentlyProcessing = "";
-        ShowWelcome = true;
         UpdateSummary();
     }
 
@@ -315,6 +314,20 @@ public partial class MainViewModel : ObservableObject
     private void ClearCache()
     {
         _analyzer.ClearCache();
+    }
+
+    [RelayCommand]
+    private void RemoveTrack()
+    {
+        if (SelectedFile == null) return;
+        var toRemove = SelectedFile;
+        SelectedFile = null;
+        IsSpectrumVisible = false;
+        Files.Remove(toRemove);
+        _selectionFilter = null;
+        PopulateArtistGroups();
+        ApplyFilters();
+        UpdateSummary();
     }
 
     private static void ExportCsv(string path, List<AudioFileViewModel> data)
@@ -382,8 +395,16 @@ public partial class MainViewModel : ObservableObject
             if (ct.IsCancellationRequested) return;
 
             var vms = foundFiles.Select(f => new AudioFileViewModel(f)).ToList();
-            foreach (var vm in vms)
-                Files.Add(vm);
+            int batchSize = 200;
+            for (int i = 0; i < vms.Count; i += batchSize)
+            {
+                var batch = vms.Skip(i).Take(batchSize).ToList();
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    foreach (var vm in batch) Files.Add(vm);
+                }, System.Windows.Threading.DispatcherPriority.Background);
+                await Task.Yield();
+            }
 
             PopulateArtistGroups();
             _selectionFilter = null;
@@ -429,6 +450,14 @@ public partial class MainViewModel : ObservableObject
                             else if (result.Decision == "REPLACE")
                                 ReplaceCount++;
 
+                            var existing = ArtistGroups
+                                .SelectMany(a => a.Albums)
+                                .FirstOrDefault(al => string.Equals(al.AlbumName,
+                                    string.IsNullOrWhiteSpace(result.Album) ? "Unknown Album" : result.Album,
+                                    StringComparison.OrdinalIgnoreCase));
+                            if (existing != null)
+                                existing.Tracks.Add(vm);
+
                             UpdateSummary();
                         });
                     }
@@ -442,7 +471,6 @@ public partial class MainViewModel : ObservableObject
             await Task.WhenAll(tasks);
 
             CurrentlyProcessing = "";
-            PopulateArtistGroups();
             _selectionFilter = null;
             ApplyFilters();
             ShowWelcome = Files.Count == 0;
@@ -576,11 +604,11 @@ public partial class MainViewModel : ObservableObject
     {
         var groups = Files
             .Where(f => f.AnalysisStatus != AnalysisStatus.Error)
-            .GroupBy(f => string.IsNullOrWhiteSpace(f.Artist) ? "Unknown Artist" : f.Artist)
+            .GroupBy(f => NormalizeArtist(f))
             .OrderBy(g => g.Key)
             .Select(artistGroup =>
             {
-                var artist = new ArtistGroup { ArtistName = artistGroup.Key };
+                var artist = new ArtistGroup { ArtistName = artistGroup.First().Artist.Length > 0 ? artistGroup.First().Artist : "Unknown Artist" };
                 var albums = artistGroup
                     .GroupBy(f => string.IsNullOrWhiteSpace(f.Album) ? "Unknown Album" : f.Album)
                     .OrderBy(g => g.Key)
@@ -595,7 +623,7 @@ public partial class MainViewModel : ObservableObject
                             CoverData = first.CoverData,
                             Tracks = new ObservableCollection<AudioFileViewModel>(tracks)
                         };
-                        var completed = tracks.Where(t => t.AnalysisStatus == Models.AnalysisStatus.Completed).ToList();
+                        var completed = tracks.Where(t => t.AnalysisStatus == Models.AnalysisStatus.Completed && t.Decision != "SKIPPED").ToList();
                         if (completed.Count > 0)
                         {
                             album.AverageLosslessScore = completed.Average(t => t.LosslessScorePercent);
@@ -609,6 +637,22 @@ public partial class MainViewModel : ObservableObject
                                 : 0;
                             album.AlbumVerdict = album.ReplaceCount > 0 ? "REPLACE"
                                 : album.InvestigateCount > 0 ? "NOT SURE" : "LOSSLESS";
+
+                            // 3.1 Album consistency: ≥80% same Authenticity → mark outliers
+                            var authGroups = completed
+                                .GroupBy(t => t.Authenticity)
+                                .OrderByDescending(g => g.Count())
+                                .ToList();
+                            if (authGroups.Count >= 2)
+                            {
+                                var majority = authGroups[0];
+                                double majorityPct = (double)majority.Count() / completed.Count;
+                                if (majorityPct >= 0.8)
+                                {
+                                    foreach (var outlier in authGroups.Skip(1).SelectMany(g => g))
+                                        outlier.IsAlbumOutlier = true;
+                                }
+                            }
                         }
                         return album;
                     });
@@ -618,6 +662,14 @@ public partial class MainViewModel : ObservableObject
             });
 
         ArtistGroups = new ObservableCollection<ArtistGroup>(groups);
+    }
+
+    private static string NormalizeArtist(AudioFileViewModel f)
+    {
+        var name = string.IsNullOrWhiteSpace(f.Artist) ? "Unknown Artist" : f.Artist.Trim();
+        if (name.StartsWith("The ", StringComparison.OrdinalIgnoreCase))
+            name = name[4..].Trim();
+        return name.ToLowerInvariant();
     }
 
     private void UpdateSummary()
