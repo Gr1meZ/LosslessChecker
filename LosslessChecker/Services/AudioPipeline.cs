@@ -74,6 +74,7 @@ public class AudioPipeline
             };
 
             var tags = TagReader.Read(fileInfo.FilePath);
+            double? replayGainTrackDb = null;
             if (tags != null)
             {
                 result = result with
@@ -84,18 +85,29 @@ public class AudioPipeline
                     FileName = tags.Title,
                     CoverData = tags.CoverData
                 };
+                replayGainTrackDb = tags.ReplayGainTrackDb;
             }
 
             int mp3Bitrate = 0;
             string mp3Encoder = "";
+            int mp3VbrFrames = 0;
             if (fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
                     using var mp3Reader = new NAudio.Wave.Mp3FileReader(fileInfo.FilePath);
-                    mp3Bitrate = mp3Reader.Mp3WaveFormat.AverageBytesPerSecond * 8 / 1000;
                     var xingHeader = mp3Reader.XingHeader;
-                    mp3Encoder = xingHeader != null ? "LAME" : "Unknown";
+                    if (xingHeader != null)
+                    {
+                        mp3Bitrate = xingHeader.Mp3Frame.BitRate / 1000;
+                        mp3VbrFrames = xingHeader.Frames;
+                        mp3Encoder = xingHeader.Frames > 0 ? "LAME VBR" : $"LAME CBR {mp3Bitrate} kbps";
+                    }
+                    else
+                    {
+                        mp3Bitrate = mp3Reader.Mp3WaveFormat.AverageBytesPerSecond * 8 / 1000;
+                        mp3Encoder = "Unknown";
+                    }
                 }
                 catch { mp3Encoder = "Error"; }
             }
@@ -125,11 +137,52 @@ public class AudioPipeline
             result = result with { DurationSeconds = Math.Round(duration, 1) };
 
             int actualBitrate = 0;
+            double averageBitrateKbps = 0;
+            double compressionRatio = 0;
+            double minFrameBitrateKbps = 0;
+            double maxFrameBitrateKbps = 0;
             try
             {
-                long fileSize = new System.IO.FileInfo(fileInfo.FilePath).Length;
+                using var fs = new System.IO.FileStream(fileInfo.FilePath, FileMode.Open, FileAccess.Read);
+                long fileSize = fs.Length;
+                long dataStart = 0;
+
+                bool isFlacFile = fileInfo.FilePath.EndsWith(".flac", StringComparison.OrdinalIgnoreCase);
+                bool isMp3File = fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
+
+                if (isMp3File)
+                {
+                    var tagHeader = new byte[10];
+                    if (fs.Read(tagHeader, 0, 10) == 10 &&
+                        tagHeader[0] == 'I' && tagHeader[1] == 'D' && tagHeader[2] == '3')
+                    {
+                        int tagSize = ((tagHeader[6] & 0x7F) << 21) | ((tagHeader[7] & 0x7F) << 14)
+                                    | ((tagHeader[8] & 0x7F) << 7) | (tagHeader[9] & 0x7F);
+                        dataStart = tagSize + 10;
+                    }
+                }
+                else if (isFlacFile)
+                {
+                    dataStart = AudioFormatReader.GetFlacMetadataSize(fileInfo.FilePath);
+                }
+
+                long dataSize = fileSize - dataStart;
                 if (duration > 0)
-                    actualBitrate = (int)(fileSize * 8.0 / (duration * 1000.0));
+                {
+                    actualBitrate = (int)(dataSize * 8.0 / (duration * 1000.0));
+                    averageBitrateKbps = Math.Round(dataSize * 8.0 / (duration * 1000.0), 1);
+                }
+
+                long uncompressedSize = (long)(duration * sampleRate * (bitDepth / 8.0) * channels);
+                if (uncompressedSize > 0)
+                    compressionRatio = Math.Round((double)dataSize / uncompressedSize, 3);
+
+                if (isFlacFile && dataStart > 0 && fileSize > dataStart + 100)
+                {
+                    var (minBps, maxBps) = AnalyzeFlacFrameBitrates(fileInfo.FilePath, dataStart, fileSize, sampleRate);
+                    minFrameBitrateKbps = minBps;
+                    maxFrameBitrateKbps = maxBps;
+                }
             }
             catch { }
 
@@ -139,8 +192,8 @@ public class AudioPipeline
                 {
                     AnalysisStatus = AnalysisStatus.Completed,
                     Authenticity = "SKIPPED",
-                    QualityScore = 5,
-                    Decision = "INVESTIGATE",
+                    QualityScore = 0,
+                    Decision = "SKIPPED",
                     StructuredReport = "File too short (<5s) for reliable analysis."
                 };
             }
@@ -154,37 +207,71 @@ public class AudioPipeline
 
             if (ct.IsCancellationRequested) return Cancelled(result);
 
-            var artifactTask = Task.Run(() => _artifacts.Detect(mono, sampleRate, cutoffHz), ct);
-            var truePeak = new Analyzers.TruePeakDetector();
-            var dr = new DrMeter();
-            var dcOffset = new Analyzers.DcOffsetDetector();
-            var phase = new Analyzers.PhaseAnalyzer();
-            var bitDepthValidator = new BitDepthValidator();
-            var tpTask = Task.Run(() => truePeak.Analyze(buffer), ct);
-            var lufsTask = Task.Run(() => _lufs.Analyze(buffer), ct);
-            var drTask = Task.Run(() => dr.AnalyzeStereo(buffer), ct);
-            var dcTask = Task.Run(() => dcOffset.Analyze(buffer), ct);
-            var phaseTask = Task.Run(() => phase.Analyze(buffer), ct);
-            var bitTask = Task.Run(() => bitDepthValidator.ValidateStereo(buffer, bitDepth), ct);
-            var spectroTask = Task.Run(() => _spectro.Build(mono, sampleRate), ct);
+            // ========== Phase 2: Parallel — all independent analyzers ==========
+            // Each analyzer reads shared read-only data (buffer, mono, spectrum)
+            // and creates its own FFT instances — fully thread-safe.
+            (bool hasArtifacts, string artifactLevel, string artifactType) artifactResult = default;
+            TruePeakResult tpResult = null!;
+            LufsResult lufsResult = null!;
+            DrResult drResult = null!;
+            DcOffsetResult dcResult = null!;
+            PhaseResult phaseResult = null!;
+            BitDepthResult bitResult = null!;
+            SpectrogramData spectroData = null!;
+            bool upscaleDetected = false;
+            string upscaleVerdict = "";
+            double maxHfDb = 0;
+            VinylResult vinylResult = null!;
+            ContainerResult containerResult = null!;
+            bool hasPreEcho = false;
+            int preEchoCount = 0;
+            bool hasSpectralHoles = false;
+            bool hasCodecSilence = false;
+            bool hasAbruptEdges = false;
+            ResamplingResult resamplingResult = null!;
 
-            var (isUpscale, upscaleVerdict, maxHfDb) = _upscale.Detect(spectrum, sampleRate);
-            var vinylResult = _vinyl.Detect(spectrum, sampleRate, mono);
-            var containerResult = _container.Analyze(fileInfo.FilePath, mono, sampleRate);
-            var (hasPreEcho, preEchoCount) = _artifacts.DetectPreEcho(mono, sampleRate);
-            bool hasSpectralHoles = _artifacts.DetectSpectralHoles(spectrum, sampleRate / 2.0);
-            var resamplingResult = _resampling.DetectFromSpectrum(spectrum, sampleRate);
+            Parallel.Invoke(new ParallelOptions { CancellationToken = ct },
+                // buffer-based (full file scan — CPU heavy, memory-bound)
+                () => tpResult = new TruePeakDetector().Analyze(buffer),
+                () => lufsResult = _lufs.Analyze(buffer),
+                () => drResult = new DrMeter().AnalyzeStereo(buffer),
+                () => dcResult = new DcOffsetDetector().Analyze(buffer),
+                () => phaseResult = new PhaseAnalyzer().Analyze(buffer),
+                () => bitResult = new BitDepthValidator().ValidateStereo(buffer, bitDepth),
+                () => spectroData = _spectro.Build(mono, sampleRate),
+
+                // mono + cutoffHz-based
+                () => artifactResult = _artifacts.Detect(mono, sampleRate, cutoffHz),
+                () =>
+                {
+                    var preEcho = new PreEchoDetector();
+                    preEcho.Init(sampleRate);
+                    preEcho.AddChunk(mono);
+                    var r = preEcho.GetResult();
+                    hasPreEcho = r.hasPreEcho;
+                    preEchoCount = r.preEchoCount;
+                },
+                () => hasAbruptEdges = _artifacts.DetectAbruptEdges(mono, sampleRate),
+                () => containerResult = _container.Analyze(fileInfo.FilePath, mono, sampleRate),
+
+                // spectrum-based (depends on Phase 1 cutoff)
+                () => { var r = _upscale.Detect(spectrum, sampleRate); upscaleDetected = r.isUpscale; upscaleVerdict = r.verdict; maxHfDb = r.maxHfDb; },
+                () => vinylResult = _vinyl.Detect(spectrum, sampleRate, mono),
+                () => hasSpectralHoles = _artifacts.DetectSpectralHoles(spectrum, sampleRate / 2.0),
+                () => hasCodecSilence = CutoffDetector.HasAbsoluteSilence(spectrum, cutoffHz, sampleRate),
+                () => resamplingResult = _resampling.DetectFromSpectrum(spectrum, sampleRate)
+            );
 
             if (ct.IsCancellationRequested) return Cancelled(result);
 
-            var (hasArtifacts, artifactLevel, artifactType) = artifactTask.Result;
-            var tpResult = tpTask.Result;
-            var lufsResult = lufsTask.Result;
-            var drResult = drTask.Result;
-            var dcResult = dcTask.Result;
-            var phaseResult = phaseTask.Result;
-            var bitResult = bitTask.Result;
-            var spectroData = spectroTask.Result;
+            var hasArtifacts = artifactResult.hasArtifacts;
+            var artifactLevel = artifactResult.artifactLevel;
+            var artifactType = artifactResult.artifactType;
+
+            // ========== Phase 3: Sequential — lightweight aggregations ==========
+            bool isFakeStereo = new FakeStereoDetector().IsFakeStereo(buffer, phaseResult.Correlation);
+            bool isUpscale = upscaleDetected || isFakeHiRes
+                || (sampleRate == 48000 && shelfType == "Brickwall" && cutoffHz >= 21500 && cutoffHz <= 23000);
 
             if (ct.IsCancellationRequested) return Cancelled(result);
 
@@ -200,6 +287,8 @@ public class AudioPipeline
                 HasPreEcho = hasPreEcho,
                 PreEchoCount = preEchoCount,
                 HasSpectralHoles = hasSpectralHoles,
+                HasCodecSilence = hasCodecSilence,
+                HasAbruptEdges = hasAbruptEdges,
                 SamplePeakDb = tpResult.SamplePeakDbL,
                 TruePeakDb = Math.Max(tpResult.TruePeakDbL, tpResult.TruePeakDbR),
                 ClippingPercent = tpResult.ClippingPercent,
@@ -217,7 +306,8 @@ public class AudioPipeline
                 EffectiveBitDepth = bitResult.EffectiveBitDepth,
                 Correlation = phaseResult.Correlation,
                 IsMonoCompatible = phaseResult.IsMonoCompatible,
-                IsUpscale = isUpscale || isFakeHiRes,
+                IsFakeStereo = isFakeStereo,
+                IsUpscale = isUpscale,
                 MaxHfDb = Math.Round(maxHfDb, 1),
                 IsVinylRip = vinylResult.IsVinylRip,
                 VinylRumbleRatio = vinylResult.RumbleRatio,
@@ -229,6 +319,9 @@ public class AudioPipeline
                 MqaDetails = containerResult.MqaDetails,
                 IsHdcd = containerResult.IsHdcd,
                 PcmMd5Hex = PcmHasher.ToHexString(containerResult.PcmMd5),
+                ReplayGainTrackDb = replayGainTrackDb ?? 0,
+                ReplayGainMismatch = replayGainTrackDb.HasValue
+                    && Math.Abs(replayGainTrackDb.Value - lufsResult.IntegratedLufs) > 3,
                 HasAliasing = resamplingResult.HasAliasing,
                 HasRinging = resamplingResult.HasRinging,
                 ResamplingVerdict = resamplingResult.Verdict,
@@ -241,7 +334,17 @@ public class AudioPipeline
                 Mp3Encoder = mp3Encoder,
                 AacBitrate = aacBitrate,
                 IsAac = isAac,
-                ActualBitrate = actualBitrate
+                ActualBitrate = actualBitrate,
+                AverageBitrateKbps = averageBitrateKbps,
+                CompressionRatio = compressionRatio,
+                MinFrameBitrateKbps = minFrameBitrateKbps,
+                MaxFrameBitrateKbps = maxFrameBitrateKbps,
+                IsSuspiciousBitrate = (!fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)
+                                    && !fileInfo.FilePath.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase)
+                                    && !fileInfo.FilePath.EndsWith(".aac", StringComparison.OrdinalIgnoreCase)
+                                    && averageBitrateKbps < 600 && cutoffHz < 21000 && shelfType == "Brickwall")
+                                   || (bitDepth == 24 && bitResult.EffectiveBitDepth <= 16)
+                                   || (compressionRatio > 0.95 && bitDepth == 16)
             };
 
             result = result with
@@ -262,9 +365,89 @@ public class AudioPipeline
                 DetectedType = detectedType
             };
 
+            // Override detectedType for native lossy formats: always show format bitrate from cutoff
+            string ext = Path.GetExtension(fileInfo.FilePath).ToLowerInvariant();
+            if (ext == ".mp3")
+            {
+                int cutoffBr = CutoffDetector.MapCutoffToBitrate(cutoffHz, shelfType, actualBitrate, sampleRate);
+                if (cutoffBr == 0) cutoffBr = actualBitrate;
+                if (cutoffBr == 0 && mp3Bitrate > 0) cutoffBr = mp3Bitrate;
+                result = result with { DetectedType = cutoffBr > 0 ? $"MP3 {cutoffBr}" : "MP3" };
+            }
+            else if ((ext == ".m4a" || ext == ".aac") && isAac)
+            {
+                int cutoffBr = CutoffDetector.MapCutoffToBitrate(cutoffHz, shelfType, actualBitrate, sampleRate);
+                if (cutoffBr == 0) cutoffBr = actualBitrate;
+                if (cutoffBr == 0 && aacBitrate > 0) cutoffBr = aacBitrate;
+                result = result with { DetectedType = cutoffBr > 0 ? $"AAC {cutoffBr}" : "AAC" };
+            }
+
+            // Override detectedType for upscaled files: show source→destination instead of raw format
+            if (sampleRate >= 88200 && result.IsUpscale)
+            {
+                string upscaleLabel;
+                if (cutoffHz <= 17000 && shelfType == "Brickwall")
+                    upscaleLabel = "UPSCALE (MP3 128→HI-RES)";
+                else if (cutoffHz <= 20000 && shelfType == "Brickwall")
+                    upscaleLabel = "UPSCALE (MP3 320→HI-RES)";
+                else if (cutoffHz <= 23500 && shelfType == "Brickwall")
+                    upscaleLabel = "UPSCALE (CD→HI-RES)";
+                else if (maxHfDb < -50)
+                    upscaleLabel = "UPSCALE (NO HF)";
+                else
+                    upscaleLabel = "UPSCALE (SUSPICIOUS)";
+                result = result with { DetectedType = upscaleLabel };
+            }
+            // Detect 44.1k→48k upscale: brickwall at ~22-24k on 48k sample rate
+            else if (sampleRate == 48000 && cutoffHz > 21000 && cutoffHz <= 23000 && shelfType == "Brickwall" && maxHfDb < -40)
+            {
+                result = result with { DetectedType = "UPSCALE (44.1k→48k)" };
+            }
+
+            // Refine format label for M4A: if codec detection failed but audio is lossless → ALAC
+            if (result.Format.StartsWith("M4A") && (detectedType.Contains("LOSSLESS") || detectedType.Contains("HI-RES")))
+            {
+                result = result with
+                {
+                    Format = $"ALAC {sampleRate / 1000.0:F0}kHz/{bitDepth}bit"
+                };
+            }
+
+            // Refine ClaimedType for M4A: if detection fell back to AAC but audio is lossless → ALAC
+            if (Path.GetExtension(fileInfo.FilePath).ToLowerInvariant() == ".m4a"
+                && result.ClaimedType == "AAC"
+                && (detectedType.Contains("LOSSLESS") || detectedType.Contains("HI-RES")))
+            {
+                result = result with { ClaimedType = "ALAC" };
+            }
+
+            // Refine remaining UNCERTAIN labels using additional evidence
+            if (detectedType == "UNCERTAIN")
+            {
+                string refined;
+                if (shelfType == "Brickwall" && hasArtifacts)
+                    refined = "LOSSY (TRANSCODE)";
+                else if (hasCodecSilence)
+                    refined = "LOSSY (TRANSCODE)";
+                else if (!hasArtifacts && cutoffHz / (double)(sampleRate / 2) >= 0.90)
+                    refined = "LOSSLESS (WEB)";
+                else
+                    refined = "UNCERTAIN"; // genuinely ambiguous, keep it
+                if (refined != "UNCERTAIN")
+                {
+                    result = result with { DetectedType = refined };
+                    detectedType = refined;
+                }
+            }
+
             bool isMp3 = fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
-            bool isMp3Detected = detectedType.StartsWith("MP3") || isMp3;
+            bool isMp3Detected = detectedType.StartsWith("MP3") || isMp3
+                || detectedType == "LOSSY (TRANSCODE)"
+                || detectedType == "UPSCALE (MP3->FLAC)";
             bool isAacDetected = detectedType.StartsWith("AAC") || isAac;
+
+            string fileExt = Path.GetExtension(fileInfo.FilePath).ToLowerInvariant();
+            bool isTranscode = (isMp3Detected && fileExt != ".mp3") || (isAacDetected && fileExt != ".m4a" && fileExt != ".aac");
 
             double mp3QualityScore = 0;
             double aacQualityScore = 0;
@@ -278,7 +461,22 @@ public class AudioPipeline
                 aacQualityScore = ComputeAacQuality(cutoffHz, sampleRate, aacBitrate, actualBitrate, artifactLevel, hasSpectralHoles);
             }
 
-            if (isMp3)
+            if (result.IsMqa)
+            {
+                result = result with { Authenticity = "MQA" };
+            }
+            else if (result.IsHdcd)
+            {
+                result = result with { Authenticity = _losslessScorer.Classify(result) };
+            }
+            else if (isTranscode)
+            {
+                result = result with
+                {
+                    Authenticity = isMp3Detected ? "TRANSCODE (MP3→FLAC)" : "TRANSCODE (AAC→FLAC)"
+                };
+            }
+            else if (isMp3)
             {
                 result = result with { Authenticity = "LOSSY (MP3)" };
             }
@@ -291,7 +489,9 @@ public class AudioPipeline
                 result = result with { Authenticity = _losslessScorer.Classify(result) };
             }
 
-            var losslessScore = isMp3Detected ? mp3QualityScore
+            var losslessScore = result.IsMqa ? 100.0
+                : isTranscode ? 0.0
+                : isMp3Detected ? mp3QualityScore
                 : isAacDetected ? aacQualityScore
                 : _losslessScorer.Score(result);
             var hiResScore = _losslessScorer.ScoreHiRes(result);
@@ -299,20 +499,30 @@ public class AudioPipeline
             double qualityPercent;
             string decision;
 
-            if (isMp3Detected)
+            if (result.IsMqa)
+            {
+                qualityPercent = 100;
+                decision = "MQA (needs decoder)";
+            }
+            else if (isTranscode)
+            {
+                decision = "REPLACE";
+                qualityPercent = 0;
+            }
+            else if (isMp3Detected)
             {
                 var (masterScore, _) = _qualityScorer.Score(result);
                 qualityPercent = mp3QualityScore * 0.6 + masterScore * 0.4;
-                decision = mp3QualityScore >= 80 ? "KEEP"
-                    : mp3QualityScore >= 50 ? "INVESTIGATE"
+                decision = mp3QualityScore >= 70 ? "KEEP"
+                    : mp3QualityScore >= 40 ? "INVESTIGATE"
                     : "REPLACE";
             }
             else if (isAacDetected)
             {
                 var (masterScore, _) = _qualityScorer.Score(result);
                 qualityPercent = aacQualityScore * 0.6 + masterScore * 0.4;
-                decision = aacQualityScore >= 80 ? "KEEP"
-                    : aacQualityScore >= 50 ? "INVESTIGATE"
+                decision = aacQualityScore >= 70 ? "KEEP"
+                    : aacQualityScore >= 40 ? "INVESTIGATE"
                     : "REPLACE";
             }
             else
@@ -354,7 +564,7 @@ public class AudioPipeline
         if (r.DynamicRange >= 3) passed++;
         if (r.ClippingPercent < 0.5) passed++;
         if (!r.HasIsp) passed++;
-        if (r.IntegratedLufs <= -7 && r.IntegratedLufs > -70) passed++;
+        if (r.IntegratedLufs <= -5 && r.IntegratedLufs > -70) passed++;
         if (r.Correlation >= 0) passed++;
         if (!r.LsbZeroPadded) passed++;
         return Math.Round((double)passed / total * 100, 0);
@@ -381,8 +591,6 @@ public class AudioPipeline
     private static double ComputeMp3Quality(double cutoffHz, int sampleRate, int bitrate, int actualBitrate,
         string artifactLevel, bool hasSpectralHoles)
     {
-        double score = 100;
-
         double expectedCutoff = bitrate switch
         {
             >= 320 => 20500,
@@ -392,19 +600,28 @@ public class AudioPipeline
             _ => 16000
         };
 
-        if (cutoffHz < expectedCutoff * 0.8) score -= 40;
-        else if (cutoffHz < expectedCutoff * 0.9) score -= 20;
-        else if (cutoffHz < expectedCutoff) score -= 5;
+        // Transcode mismatch: cutoff far below expected → clear transcode, score 0
+        if (cutoffHz < expectedCutoff * 0.7) return 0;
 
-        if (bitrate >= 256 && cutoffHz < 18000) score -= 30;
-        if (bitrate >= 192 && cutoffHz < 16000) score -= 25;
+        // Graded scoring: tiered by cutoff quality
+        double score;
+        if (cutoffHz >= 20000 && (bitrate >= 320 || bitrate == 0))
+            score = 100;
+        else if (cutoffHz >= 19000 && bitrate >= 256)
+            score = 90;
+        else if (cutoffHz >= 18500 && bitrate >= 192)
+            score = 80;
+        else if (cutoffHz >= 16000)
+            score = 50;
+        else
+            score = 20;
 
+        // Bitrate ratio check (suspicious if different from actual)
         if (actualBitrate > 0 && bitrate > 0)
         {
             double ratio = (double)bitrate / actualBitrate;
-            if (ratio > 2.5) score -= 40;
-            else if (ratio > 1.5) score -= 20;
-            else if (ratio > 1.2) score -= 8;
+            if (ratio > 2.5) score -= 30;
+            else if (ratio > 1.5) score -= 15;
         }
 
         if (artifactLevel == "Strong") score -= 25;
@@ -419,8 +636,6 @@ public class AudioPipeline
     private static double ComputeAacQuality(double cutoffHz, int sampleRate, int bitrate, int actualBitrate,
         string artifactLevel, bool hasSpectralHoles)
     {
-        double score = 100;
-
         double expectedCutoff = bitrate switch
         {
             >= 256 => 20000,
@@ -429,18 +644,26 @@ public class AudioPipeline
             _ => 15000
         };
 
-        if (cutoffHz < expectedCutoff * 0.8) score -= 40;
-        else if (cutoffHz < expectedCutoff * 0.9) score -= 20;
-        else if (cutoffHz < expectedCutoff) score -= 5;
+        // Transcode mismatch: cutoff far below expected → clear transcode, score 0
+        if (cutoffHz < expectedCutoff * 0.7) return 0;
 
-        if (bitrate >= 192 && cutoffHz < 16000) score -= 25;
+        // Graded scoring: tiered by cutoff quality
+        double score;
+        if (cutoffHz >= 20000 && (bitrate >= 256 || bitrate == 0))
+            score = 100;
+        else if (cutoffHz >= 18500 && bitrate >= 192)
+            score = 80;
+        else if (cutoffHz >= 16000)
+            score = 50;
+        else
+            score = 20;
 
+        // Bitrate ratio check
         if (actualBitrate > 0 && bitrate > 0)
         {
             double ratio = (double)bitrate / actualBitrate;
-            if (ratio > 2.5) score -= 40;
-            else if (ratio > 1.5) score -= 20;
-            else if (ratio > 1.2) score -= 8;
+            if (ratio > 2.5) score -= 30;
+            else if (ratio > 1.5) score -= 15;
         }
 
         if (artifactLevel == "Strong") score -= 25;
@@ -450,6 +673,57 @@ public class AudioPipeline
         if (hasSpectralHoles) score -= 15;
 
         return Math.Max(0, Math.Min(100, score));
+    }
+
+    private static (double minKbps, double maxKbps) AnalyzeFlacFrameBitrates(
+        string filePath, long audioDataOffset, long fileSize, int sampleRate)
+    {
+        try
+        {
+            using var fs = new System.IO.FileStream(filePath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+            var buf = new byte[16384];
+            fs.Seek(audioDataOffset, System.IO.SeekOrigin.Begin);
+
+            var frameSizes = new List<int>();
+            int bytesRead;
+            int searchOffset = 0;
+
+            while ((bytesRead = fs.Read(buf, 0, buf.Length)) > 0)
+            {
+                for (int i = 0; i < bytesRead - 1; i++)
+                {
+                    int sync = (buf[i] << 8) | buf[i + 1];
+                    if ((sync & 0xFFFE) == 0xFFF8)
+                    {
+                        frameSizes.Add(searchOffset + i);
+                    }
+                }
+                searchOffset += bytesRead;
+            }
+
+            if (frameSizes.Count < 2)
+                return (0, 0);
+
+            var bitrates = new List<double>();
+            for (int i = 0; i < frameSizes.Count - 1; i++)
+            {
+                int frameSize = frameSizes[i + 1] - frameSizes[i];
+                if (frameSize > 0 && frameSize < 65536)
+                {
+                    double kbps = frameSize * 8.0 * sampleRate / 4096.0 / 1000.0;
+                    bitrates.Add(kbps);
+                }
+            }
+
+            if (bitrates.Count == 0)
+                return (0, 0);
+
+            return (Math.Round(bitrates.Min(), 1), Math.Round(bitrates.Max(), 1));
+        }
+        catch
+        {
+            return (0, 0);
+        }
     }
 
     private static double ComputeOverallRms(StereoBuffer buffer)

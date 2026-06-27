@@ -97,10 +97,13 @@ public class ArtifactDetector
         double avgFlatness = totalFlatness / frameCount;
         double avgSlope = totalSlope / frameCount;
 
-        // If cutoff is near Nyquist (>95%), there's not enough HF spectrum
-        // to reliably detect artifacts — skip to avoid false positives
+        // If cutoff is near Nyquist, there's not enough HF spectrum
+        // to reliably detect artifacts — skip to avoid false positives.
+        // 48kHz guard: MP3 at 48k cuts off ≤20.5 kHz (85%). Cutoff at 88%+
+        // Nyquist (21.1 kHz) leaves too little room — any flatness there is noise, not artifacts.
         double cutoffRatio = cutoffFrequency / (sampleRate / 2.0);
-        if (cutoffRatio > 0.95)
+        double skipThreshold = sampleRate == 48000 ? 0.88 : 0.95;
+        if (cutoffRatio > skipThreshold)
             return (false, "None", "None");
 
         // avgSlope is dB/bin. Negative = energy drops above cutoff.
@@ -170,34 +173,6 @@ public class ArtifactDetector
         return ratio > 0.4;
     }
 
-    public (bool hasPreEcho, int preEchoCount) DetectPreEcho(float[] samples, int sampleRate)
-    {
-        if (samples.Length < sampleRate) return (false, 0);
-        int windowMs = 5; // 5 ms window — typical MP3 pre-echo duration
-        int windowSamples = sampleRate * windowMs / 1000;
-        int preEchoCount = 0;
-        double prevRms = 0;
-
-        for (int pos = 0; pos + windowSamples * 2 <= samples.Length; pos += windowSamples)
-        {
-            double rmsBefore = 0, rmsAfter = 0;
-            for (int i = pos; i < pos + windowSamples; i++)
-                rmsBefore += samples[i] * samples[i];
-            for (int i = pos + windowSamples; i < pos + windowSamples * 2; i++)
-                rmsAfter += samples[i] * samples[i];
-            rmsBefore = Math.Sqrt(rmsBefore / windowSamples);
-            rmsAfter = Math.Sqrt(rmsAfter / windowSamples);
-
-            // Pre-echo: noise burst before a transient
-            // Transient detected as sudden 4x+ amplitude increase
-            if (rmsAfter > prevRms * 4.0 && rmsBefore > rmsAfter * 0.15)
-                preEchoCount++;
-            prevRms = rmsAfter;
-        }
-
-        return (preEchoCount > 3, preEchoCount);
-    }
-
     public bool DetectSpectralHoles(double[] avgSpectrum, double nyquist)
     {
         int bins = avgSpectrum.Length;
@@ -220,6 +195,123 @@ public class ArtifactDetector
             prevDb = db;
         }
 
-        return holeCount > bins / 50; // More than ~2% of bins have holes
+        return holeCount > bins / 50;
+    }
+
+    public (bool hasSbr, string sbrVerdict) DetectSbr(
+        double[] averagedSpectrum, int sampleRate)
+    {
+        int bins = averagedSpectrum.Length;
+        if (bins < 100) return (false, "");
+
+        double nyquist = sampleRate / 2.0;
+
+        int bin12k = (int)(12000.0 / nyquist * bins);
+        int bin18k = (int)(18000.0 / nyquist * bins);
+        bin12k = Math.Clamp(bin12k, bins / 4, bins - 1);
+        bin18k = Math.Clamp(bin18k, bin12k + 10, bins - 1);
+
+        int localCutoffBin = bin18k;
+        double steepestDrop = 0;
+        for (int i = bin12k + 20; i < bin18k - 5; i++)
+        {
+            double before = MaxInRange(averagedSpectrum, i - 15, i);
+            double after = MaxInRange(averagedSpectrum, i, i + 15);
+            double dropDb = 20.0 * Math.Log10(Math.Max(before, 1e-10) / Math.Max(after, 1e-10));
+            if (dropDb > steepestDrop) { steepestDrop = dropDb; localCutoffBin = i; }
+        }
+
+        int upperStart = localCutoffBin;
+        int upperEnd = Math.Min(localCutoffBin + (int)(3000.0 / nyquist * bins), bins - 1);
+        int lowerStart = Math.Max(1, localCutoffBin - (int)(3000.0 / nyquist * bins));
+        int lowerEnd = localCutoffBin;
+
+        if (upperEnd - upperStart < 10 || lowerEnd - lowerStart < 10)
+            return (false, "");
+
+        double upperFlatness = ComputeFlatness(averagedSpectrum, upperStart, upperEnd);
+        double lowerFlatness = ComputeFlatness(averagedSpectrum, lowerStart, lowerEnd);
+
+        bool hasTonalPatches = upperFlatness < 0.15 && lowerFlatness > 0.3;
+
+        int envBins = Math.Min(upperEnd - upperStart, lowerEnd - lowerStart);
+        double envCorr = ComputeEnvelopeCorrelation(averagedSpectrum, lowerStart, upperStart, envBins);
+
+        double upperEnergy = SumRange(averagedSpectrum, upperStart, upperEnd);
+        double lowerEnergy = SumRange(averagedSpectrum, lowerStart, lowerEnd);
+        double energyRatioDb = lowerEnergy > 0 ? 20.0 * Math.Log10(upperEnergy / lowerEnergy) : -200;
+
+        bool hasSbr = hasTonalPatches || (envCorr > 0.7 && energyRatioDb > -24 && energyRatioDb < -12);
+        string verdict = hasSbr ? "AAC SBR" : "";
+        return (hasSbr, verdict);
+    }
+
+    private static double MaxInRange(double[] spectrum, int start, int end)
+    {
+        double max = 0;
+        for (int i = Math.Max(0, start); i < Math.Min(spectrum.Length, end); i++)
+            max = Math.Max(max, spectrum[i]);
+        return max;
+    }
+
+    private static double SumRange(double[] spectrum, int start, int end)
+    {
+        double sum = 0;
+        for (int i = Math.Max(0, start); i < Math.Min(spectrum.Length, end); i++)
+            sum += spectrum[i];
+        return sum;
+    }
+
+    private static double ComputeFlatness(double[] spectrum, int start, int end)
+    {
+        double geomSum = 0, arithSum = 0;
+        int count = 0;
+        for (int i = start; i < end; i++)
+        {
+            double v = Math.Max(spectrum[i], 1e-10);
+            geomSum += Math.Log(v);
+            arithSum += v;
+            count++;
+        }
+        if (count == 0 || arithSum <= 0) return 1.0;
+        return Math.Exp(geomSum / count) / (arithSum / count);
+    }
+
+    private static double ComputeEnvelopeCorrelation(double[] spectrum, int aStart, int bStart, int count)
+    {
+        double sumA = 0, sumB = 0, sumAB = 0, sumA2 = 0, sumB2 = 0;
+        for (int i = 0; i < count; i++)
+        {
+            double a = spectrum[aStart + i];
+            double b = spectrum[bStart + i];
+            sumA += a; sumB += b; sumAB += a * b; sumA2 += a * a; sumB2 += b * b;
+        }
+        double n = count;
+        double denom = Math.Sqrt((n * sumA2 - sumA * sumA) * (n * sumB2 - sumB * sumB));
+        return denom > 1e-10 ? (n * sumAB - sumA * sumB) / denom : 0;
+    }
+
+    public bool DetectAbruptEdges(float[] samples, int sampleRate)
+    {
+        int edgeSamples = sampleRate / 2;
+        if (samples.Length < edgeSamples * 2) return false;
+
+        double overallSumSq = 0, edgeSumSq = 0;
+        for (int i = 0; i < samples.Length; i++)
+        {
+            double s = samples[i];
+            double sq = s * s;
+            overallSumSq += sq;
+            if (i < edgeSamples || i >= samples.Length - edgeSamples)
+                edgeSumSq += sq;
+        }
+
+        double overallRms = Math.Sqrt(overallSumSq / samples.Length);
+        double edgeRms = Math.Sqrt(edgeSumSq / (edgeSamples * 2));
+
+        double overallDb = 20.0 * Math.Log10(Math.Max(overallRms, 1e-10));
+        double edgeDb = 20.0 * Math.Log10(Math.Max(edgeRms, 1e-10));
+
+        return edgeDb < -60 && overallDb > -30;
     }
 }
