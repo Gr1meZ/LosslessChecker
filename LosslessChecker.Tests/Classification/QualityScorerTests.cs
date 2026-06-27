@@ -32,7 +32,7 @@ public class QualityScorerTests
             DcOffsetL = 0, DcOffsetR = 0, Correlation = 1.0, LsbZeroPadded = false
         };
         var (score, decision) = _scorer.Score(r);
-        Assert.True(score <= 60);
+        Assert.True(score <= 70);
         Assert.StartsWith("KEEP", decision);
     }
 

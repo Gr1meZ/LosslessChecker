@@ -12,9 +12,6 @@ public class QualityScorer
     {
         double score = 100;
 
-        foreach (var (threshold, penalty) in _p.DrThresholds)
-            if (r.DynamicRange < threshold) { score -= penalty; break; }
-
         foreach (var (threshold, penalty) in _p.ClippingThresholds)
             if (r.ClippingPercent > threshold) { score -= penalty; break; }
 
