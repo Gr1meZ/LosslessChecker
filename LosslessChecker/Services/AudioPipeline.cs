@@ -260,6 +260,19 @@ public class AudioPipeline
             var drResult = dr.GetResult();
             var dcResult = dc.GetResult();
             var bitResult = bitDepthValidator.GetResult(bitDepth);
+
+            var (lsbZero, lsbConstant) = bitDepthValidator.CheckLsbFlags(bitDepth);
+            if (lsbZero || lsbConstant)
+            {
+                int effectiveBits = bitResult.EffectiveBitDepth;
+                bitResult = new BitDepthResult(
+                    true,
+                    lsbZero
+                        ? $"Claimed {bitDepth}-bit but lower 8 bits are zero-padded (effective {effectiveBits}-bit)."
+                        : $"Claimed {bitDepth}-bit but lower 8 bits have constant dither pattern (naive upscale).",
+                    bitResult.NoiseFloorDb, true, effectiveBits);
+            }
+
             var (hasPreEcho, preEchoCount) = preEcho.GetResult();
             double overallRmsDb = rmsCount > 0
                 ? Math.Round(20.0 * Math.Log10(Math.Max(Math.Sqrt(rmsSumSq / rmsCount), 1e-10)), 1)

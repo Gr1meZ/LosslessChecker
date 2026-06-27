@@ -19,6 +19,10 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
     private int _samplesInBlock;
     private bool _hasSeenChunks;
 
+    private int _lsbZeroCount;
+    private int _lsbTotalCount;
+    private readonly Dictionary<int, int> _lsbConstantMap = new();
+
     public void Reset()
     {
         Array.Clear(_rmsHistogram, 0, HistoBins);
@@ -26,6 +30,8 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
         _sumSqInBlock = 0;
         _samplesInBlock = 0;
         _hasSeenChunks = false;
+        _lsbZeroCount = _lsbTotalCount = 0;
+        _lsbConstantMap.Clear();
     }
 
     public void AddChunk(ReadOnlySpan<float> mono)
@@ -35,6 +41,17 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
         {
             float s = mono[i];
             _sumSqInBlock += s * s;
+
+            if ((i & 0xF) == 0)
+            {
+                int sample24 = (int)(s * 8388607.0 + 0.5 * Math.Sign(s));
+                int lsb = sample24 & 0xFF;
+                if (lsb == 0) _lsbZeroCount++;
+                if (_lsbConstantMap.ContainsKey(lsb)) _lsbConstantMap[lsb]++;
+                else _lsbConstantMap[lsb] = 1;
+                _lsbTotalCount++;
+            }
+
             if (++_samplesInBlock >= BlockSize)
             {
                 double rms = Math.Sqrt(_sumSqInBlock / BlockSize);
@@ -64,6 +81,18 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
     }
 
     public BitDepthResult GetResult() => GetResult(24);
+
+    public (bool lsbZero, bool lsbConstant) CheckLsbFlags(int claimedBitDepth)
+    {
+        if (claimedBitDepth != 24 || _lsbTotalCount < 100)
+            return (false, false);
+        bool lsbZero = (double)_lsbZeroCount / _lsbTotalCount > 0.95;
+        bool lsbConstant = false;
+        foreach (var kv in _lsbConstantMap)
+            if (kv.Key != 0 && (double)kv.Value / _lsbTotalCount > 0.95)
+                lsbConstant = true;
+        return (lsbZero, lsbConstant);
+    }
 
     private BitDepthResult BuildResult(int claimedBitDepth)
     {
