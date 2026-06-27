@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO;
 using System.Runtime.InteropServices;
 using LosslessChecker.Models;
@@ -5,7 +6,7 @@ using NAudio.Wave;
 
 namespace LosslessChecker.Services;
 
-public class AudioDecoder
+public static partial class AudioDecoder
 {
     private const int ReadChunkSize = 16384;
 
@@ -30,51 +31,58 @@ public class AudioDecoder
         var right = channels == 2 ? new float[initialCapacity] : Array.Empty<float>();
         int frameCount = 0;
 
-        var readBuffer = new float[ReadChunkSize * channels];
-        int read;
-
-        while ((read = provider.Read(readBuffer, 0, readBuffer.Length)) > 0)
+        var readBuffer = ArrayPool<float>.Shared.Rent(ReadChunkSize * channels);
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            int frames = read / channels;
+            int read;
 
-            if (frameCount + frames > left.Length)
+            while ((read = provider.Read(readBuffer, 0, ReadChunkSize * channels)) > 0)
             {
-                int newSize = (int)Math.Min((long)left.Length * 2, int.MaxValue);
-                if (newSize < frameCount + frames)
-                    newSize = frameCount + frames;
-                Array.Resize(ref left, newSize);
-                if (channels == 2)
-                    Array.Resize(ref right, newSize);
-            }
+                ct.ThrowIfCancellationRequested();
+                int frames = read / channels;
 
-            if (channels == 1)
-            {
-                Array.Copy(readBuffer, 0, left, frameCount, frames);
-            }
-            else
-            {
-                for (int i = 0; i < frames; i++)
+                if (frameCount + frames > left.Length)
                 {
-                    left[frameCount + i] = readBuffer[i * 2];
-                    right[frameCount + i] = readBuffer[i * 2 + 1];
+                    int newSize = (int)Math.Min((long)left.Length * 2, int.MaxValue);
+                    if (newSize < frameCount + frames)
+                        newSize = frameCount + frames;
+                    Array.Resize(ref left, newSize);
+                    if (channels == 2)
+                        Array.Resize(ref right, newSize);
                 }
+
+                if (channels == 1)
+                {
+                    Array.Copy(readBuffer, 0, left, frameCount, frames);
+                }
+                else
+                {
+                    for (int i = 0; i < frames; i++)
+                    {
+                        left[frameCount + i] = readBuffer[i * 2];
+                        right[frameCount + i] = readBuffer[i * 2 + 1];
+                    }
+                }
+
+                frameCount += frames;
             }
 
-            frameCount += frames;
+            if (frameCount == 0)
+                return new StereoBuffer(Array.Empty<float>(), Array.Empty<float>(), sampleRate);
+
+            if (frameCount < left.Length)
+            {
+                Array.Resize(ref left, frameCount);
+                if (channels == 2)
+                    Array.Resize(ref right, frameCount);
+            }
+
+            return new StereoBuffer(left, right, sampleRate);
         }
-
-        if (frameCount == 0)
-            return new StereoBuffer(Array.Empty<float>(), Array.Empty<float>(), sampleRate);
-
-        if (frameCount < left.Length)
+        finally
         {
-            Array.Resize(ref left, frameCount);
-            if (channels == 2)
-                Array.Resize(ref right, frameCount);
+            ArrayPool<float>.Shared.Return(readBuffer);
         }
-
-        return new StereoBuffer(left, right, sampleRate);
     }
 
     public static float[] DecodeMono(string filePath, CancellationToken ct = default)
@@ -87,7 +95,7 @@ public class AudioDecoder
         var left = buffer.Left;
         var right = buffer.Right;
         for (int i = 0; i < mono.Length; i++)
-            mono[i] = (left[i] + right[i]) * 0.5f;
+            mono[i] = Math.Abs(left[i]) > Math.Abs(right[i]) ? left[i] : right[i];
         return mono;
     }
 
