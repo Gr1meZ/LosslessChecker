@@ -598,6 +598,9 @@ public partial class MainViewModel : ObservableObject
                             album.KeepCount = completed.Count(t => t.Decision.StartsWith("KEEP"));
                             album.InvestigateCount = completed.Count(t => t.Decision == "INVESTIGATE");
                             album.ReplaceCount = completed.Count(t => t.Decision == "REPLACE");
+                            album.WorstTrackScore = completed.Count > 0
+                                ? completed.Min(t => t.QualityScorePercent)
+                                : 0;
                             album.AlbumVerdict = album.ReplaceCount > 0 ? "REPLACE"
                                 : album.InvestigateCount > 0 ? "NOT SURE" : "LOSSLESS";
                         }
