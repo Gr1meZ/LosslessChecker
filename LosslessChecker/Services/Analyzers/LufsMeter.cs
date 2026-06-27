@@ -36,9 +36,6 @@ public class LufsMeter
             double sumSqL = 0, sumSqR = 0;
             int end = pos + blockSize;
 
-            kwL.Reset();
-            kwR.Reset();
-
             for (int i = pos; i < end; i++)
             {
                 double filteredL = kwL.Process(buffer.Left[i]);
@@ -59,9 +56,6 @@ public class LufsMeter
         {
             double sumSqL = 0, sumSqR = 0;
             int end = pos + stBlockSize;
-
-            kwL.Reset();
-            kwR.Reset();
 
             for (int i = pos; i < end; i++)
             {
