@@ -54,11 +54,12 @@ public partial class AudioFileViewModel : ObservableObject
     [ObservableProperty] private int _bitrateSpectrum;
     [ObservableProperty] private System.Windows.Media.Brush _bitrateSpectrumColor =
         System.Windows.Media.Brushes.Gray;
-    [ObservableProperty] private string _sizePerMinute = "";
-    [ObservableProperty] private System.Windows.Media.Brush _sizePerMinuteColor =
+    [ObservableProperty] private string _fileSizeDisplay = "";
+    [ObservableProperty] private System.Windows.Media.Brush _fileSizeColor =
         System.Windows.Media.Brushes.Gray;
     [ObservableProperty] private System.Windows.Media.Brush _detectedTypeColor =
         System.Windows.Media.Brushes.Gray;
+    [ObservableProperty] private bool _isAlbumOutlier;
 
     public int AacBitrate { get; private set; }
     public bool IsAac { get; private set; }
@@ -73,13 +74,25 @@ public partial class AudioFileViewModel : ObservableObject
         }
     }
 
+    public string DisplayBitrate
+    {
+        get
+        {
+            if (Mp3Bitrate > 0 || IsAac)
+                return ActualBitrate > 0 ? $"{ActualBitrate}" : "—";
+            if (ActualBitrate > 0) return $"{ActualBitrate}";
+            return "—";
+        }
+    }
+
     public string ActualBitrateDisplay => ActualBitrate > 0 ? $"{ActualBitrate}" : "—";
 
 
     public string VerdictLabel => DetectedType.Length > 0 ? DetectedType : Decision switch
     {
-        "KEEP" => SampleRate >= 88200 && HiResScorePercent >= 70 ? "HI-RES" : "LOSSLESS",
-        "KEEP (poor master)" => "LOSSLESS",
+        "KEEP (Excellent)" => SampleRate >= 88200 && HiResScorePercent >= 70 ? "HI-RES" : "LOSSLESS",
+        "KEEP (Good)" => "LOSSLESS",
+        "KEEP (Fair)" => "LOSSLESS",
         "INVESTIGATE" => "NOT SURE",
         "REPLACE" => Mp3Bitrate > 0
             ? $"MP3 {(ActualBitrate > 0 ? ActualBitrate : Mp3Bitrate)}"
@@ -91,16 +104,30 @@ public partial class AudioFileViewModel : ObservableObject
 
     public string VerdictDisplayText => VerdictLabel;
 
+    public int VerdictPriority => Decision switch
+    {
+        "REPLACE" => 0,
+        "MQA (needs decoder)" => 1,
+        "INVESTIGATE" => 2,
+        "SKIPPED" => 3,
+        "KEEP (Fair)" => 4,
+        "KEEP (Good)" => 5,
+        "KEEP (Excellent)" => 6,
+        _ => 3
+    };
+
     // Detail panel: metric items collection
     [ObservableProperty] private ObservableCollection<MetricItem> _metricItems = new();
 
     public string FilePath { get; }
 
-    private float[]? _rawSpectro;
+    private string? _rawSpectroKey;
     private int _spectroWidth, _spectroHeight;
+    private static readonly SpectrogramCache _spectroCache = new();
+    private static readonly CoverCache _coverCache = new();
     private AnalysisResult? _lastResult;
     internal AnalysisResult? LastResult => _lastResult;
-    public float[]? RawSpectrogram => _rawSpectro;
+    public float[]? RawSpectrogram => _rawSpectroKey != null && _spectroCache.TryGet(_rawSpectroKey, out var data) ? data : null;
     public int SpectroWidth => _spectroWidth;
     public int SpectroHeight => _spectroHeight;
 
@@ -113,7 +140,7 @@ public partial class AudioFileViewModel : ObservableObject
     public void ApplyResult(AnalysisResult r)
     {
         _lastResult = r with { SpectrogramDb = null };
-        _rawSpectro = r.SpectrogramDb;        FileName = r.FileName;
+        FileName = r.FileName;
         Format = r.Format;
         CutoffFrequency = r.CutoffFrequency;
         DynamicRange = r.DynamicRange;
@@ -146,6 +173,12 @@ public partial class AudioFileViewModel : ObservableObject
         Album = r.Album;
         Genre = r.Genre;
         DurationSeconds = r.DurationSeconds;
+        if (r.CoverData is { Length: > 0 })
+        {
+            string coverKey = $"cover_{r.FilePath}";
+            if (!_coverCache.TryGet(coverKey, out _))
+                _coverCache.Store(coverKey, r.CoverData, 150);
+        }
         CoverData = r.CoverData;
         EncoderMatch = r.EncoderMatch;
         Mp3Bitrate = r.Mp3Bitrate;
@@ -154,43 +187,62 @@ public partial class AudioFileViewModel : ObservableObject
         ActualBitrate = r.ActualBitrate;
         ClaimedType = r.ClaimedType;
         DetectedType = r.DetectedType;
-        // Bitrate spectrum: expected bitrate from cutoff analysis (0 = no brickwall detected = no codec)
-        BitrateSpectrum = LosslessChecker.Services.CutoffDetector.MapCutoffToBitrate(
-            r.CutoffFrequency, r.ShelfType, r.ActualBitrate, r.SampleRate);
+        // Bitrate spectrum: real calculated average bitrate in kbps
+        BitrateSpectrum = (int)Math.Round(r.AverageBitrateKbps);
 
-        // Color: only red if brickwall was detected AND spectrum bitrate < actual bitrate
-        if (BitrateSpectrum == 0)
-            BitrateSpectrumColor = GetBrush("LosslessGreenBrush");
-        else if (BitrateSpectrum < r.ActualBitrate * 0.8)
-            BitrateSpectrumColor = GetBrush("FakeRedBrush");
+        // Color: red if suspicious bitrate, green otherwise
+        if (r.IsSuspiciousBitrate)
+            BitrateSpectrumColor = GetBrush("SignalRedBrush");
+        else if (BitrateSpectrum == 0)
+            BitrateSpectrumColor = GetBrush("FgMutedBrush");
         else
-            BitrateSpectrumColor = GetBrush("LosslessGreenBrush");
+            BitrateSpectrumColor = GetBrush("SignalGreenBrush");
 
         double mbPerMin = r.DurationSeconds > 0
             ? new System.IO.FileInfo(r.FilePath).Length / (1024.0 * 1024.0) / (r.DurationSeconds / 60.0)
             : 0;
-        SizePerMinute = $"{mbPerMin:F1}";
+        double fileSizeMb = new System.IO.FileInfo(r.FilePath).Length / (1024.0 * 1024.0);
+        FileSizeDisplay = $"{fileSizeMb:F1} MB";
 
-        if (mbPerMin < 5)
-            SizePerMinuteColor = GetBrush("FgMutedBrush");
-        else if (mbPerMin < 12)
-            SizePerMinuteColor = GetBrush("LosslessGreenBrush");
-        else if (mbPerMin < 25)
-            SizePerMinuteColor = GetBrush("AccentBrush");
+        double expectedMbPerMin = 0;
+        bool isLossy = r.Mp3Bitrate > 0 || r.AacBitrate > 0;
+        bool isLossless = !isLossy;
+        int claimedBr = r.Mp3Bitrate > 0 ? r.Mp3Bitrate : r.AacBitrate > 0 ? r.AacBitrate : 0;
+
+        if (isLossy && claimedBr > 0)
+            expectedMbPerMin = claimedBr / 8.0 / 1024.0 * 60.0;
+        else if (r.SampleRate >= 88200)
+            expectedMbPerMin = 20.0;
+        else if (r.BitDepth == 24)
+            expectedMbPerMin = 15.0;
+        else if (r.BitDepth == 16)
+            expectedMbPerMin = 8.0;
+
+        bool sizeSuspicious = false;
+        if (expectedMbPerMin > 0 && r.DurationSeconds > 0)
+            sizeSuspicious = mbPerMin < expectedMbPerMin * 0.4 || mbPerMin > expectedMbPerMin * 2.0;
+
+        if (r.IsSuspiciousBitrate || sizeSuspicious)
+            FileSizeColor = GetBrush("SignalRedBrush");
+        else if (expectedMbPerMin > 0)
+            FileSizeColor = GetBrush("SignalGreenBrush");
         else
-            SizePerMinuteColor = GetBrush("AccentBrush");
+            FileSizeColor = GetBrush("FgMutedBrush");
 
         bool match = string.Equals(r.ClaimedType, r.DetectedType, StringComparison.OrdinalIgnoreCase)
             || (r.DetectedType.StartsWith("LOSSLESS") && (r.ClaimedType == "FLAC" || r.ClaimedType == "ALAC" || r.ClaimedType == "WAV"))
             || (r.DetectedType.StartsWith("HI-RES") && r.ClaimedType.StartsWith("HI-RES"));
         if (r.DetectedType.StartsWith("UNCERTAIN"))
-            DetectedTypeColor = GetBrush("SuspiciousAmberBrush");
+            DetectedTypeColor = GetBrush("SignalAmberBrush");
         else
-            DetectedTypeColor = match ? GetBrush("LosslessGreenBrush") : GetBrush("FakeRedBrush");
+            DetectedTypeColor = match ? GetBrush("SignalGreenBrush") : GetBrush("SignalRedBrush");
 
         if (r.SpectrogramDb is { Length: > 0 })
         {
-            _rawSpectro = r.SpectrogramDb;
+            string cacheKey = $"{r.FilePath}|{r.SpectrogramWidth}|{r.SpectrogramHeight}";
+            if (!_spectroCache.TryGet(cacheKey, out _))
+                _spectroCache.Store(cacheKey, r.SpectrogramDb);
+            _rawSpectroKey = cacheKey;
             _spectroWidth = r.SpectrogramWidth;
             _spectroHeight = r.SpectrogramHeight;
         }
@@ -218,7 +270,13 @@ public partial class AudioFileViewModel : ObservableObject
 
         // Cutoff
         var cutoffRatio = nyquist > 0 ? r.CutoffFrequency / nyquist : 1.0;
+        double codecMax = nyquist * 0.93; // MP3/AAC codec limit ≈ 93% of Nyquist
+        double mp3Ratio = codecMax > 0 ? r.CutoffFrequency / codecMax : 1.0;
         bool isHiRes = r.SampleRate >= 88200;
+        bool isLossy = r.Mp3Bitrate > 0 || r.AacBitrate > 0 || r.IsAac;
+        bool isMp3OrAac = isLossy || ".mp3".Equals(System.IO.Path.GetExtension(r.FilePath)?.ToLowerInvariant())
+            || ".m4a".Equals(System.IO.Path.GetExtension(r.FilePath)?.ToLowerInvariant())
+            || ".aac".Equals(System.IO.Path.GetExtension(r.FilePath)?.ToLowerInvariant());
         string cutoffStatus;
         string cutoffColor;
         string cutoffTypical;
@@ -227,22 +285,35 @@ public partial class AudioFileViewModel : ObservableObject
             cutoffStatus = r.CutoffFrequency > 22100 ? "✓ Отлично"
                 : r.CutoffFrequency > 20000 ? "⚠ Подозрительно"
                 : "✗ Плохо";
-            cutoffColor = r.CutoffFrequency > 22100 ? "#2EA043"
-                : r.CutoffFrequency > 20000 ? "#D29922"
-                : "#CF222E";
+            cutoffColor = r.CutoffFrequency > 22100 ? "#34d399"
+                : r.CutoffFrequency > 20000 ? "#fbbf24"
+                : "#f87171";
             cutoffTypical = ">22 кГц — отлично (настоящий Hi-Res)\n20–22 кГц — подозрительно (возможен CD-апскейл)\n<20 кГц — плохо (апскейл из lossy)";
+        }
+        else if (isMp3OrAac)
+        {
+            cutoffStatus = r.CutoffFrequency >= 20000 ? "✓ MP3 256–320"
+                : r.CutoffFrequency >= 18500 ? "⚠ MP3 192"
+                : r.CutoffFrequency >= 16500 ? "⚠ MP3 128–160"
+                : "✗ MP3 <128";
+            cutoffColor = r.CutoffFrequency >= 18500 ? "#34d399"
+                : r.CutoffFrequency >= 16500 ? "#fbbf24"
+                : "#f87171";
+            cutoffTypical = $"≥{20000.0 / codecMax * 100:F0}% (≥20.0 кГц) — MP3 256–320\n{18500.0 / codecMax * 100:F0}–{20000.0 / codecMax * 100:F0}% (18.5–20.0 кГц) — MP3 192\n{16500.0 / codecMax * 100:F0}–{18500.0 / codecMax * 100:F0}% (16.5–18.5 кГц) — MP3 128–160\n<{16500.0 / codecMax * 100:F0}% — MP3 <128";
         }
         else
         {
             cutoffStatus = cutoffRatio >= 0.95 ? "✓ Отлично" : cutoffRatio >= 0.85 ? "⚠ Подозрительно" : "✗ Плохо";
-            cutoffColor = cutoffRatio >= 0.95 ? "#2EA043" : cutoffRatio >= 0.85 ? "#D29922" : "#CF222E";
+            cutoffColor = cutoffRatio >= 0.95 ? "#34d399" : cutoffRatio >= 0.85 ? "#fbbf24" : "#f87171";
             cutoffTypical = ">95% Найквиста — отлично\n85–95% — подозрительно (возможен MP3 320)\n<85% — точно сжато (MP3 128-256)";
         }
         items.Add(new MetricItem
         {
             Category = "Спектр",
             Name = "Частотный срез (Cutoff)",
-            Value = isHiRes ? $"{r.CutoffFrequency:F0} Гц" : $"{r.CutoffFrequency:F0} Гц ({cutoffRatio * 100:F0}% Найквиста)",
+            Value = isHiRes ? $"{r.CutoffFrequency:F0} Гц" : isMp3OrAac
+                ? $"{r.CutoffFrequency:F0} Гц ({mp3Ratio * 100:F0}% от макс. {r.SampleRate / 1000:F0}кГц-кодека)"
+                : $"{r.CutoffFrequency:F0} Гц ({cutoffRatio * 100:F0}% Найквиста)",
             Status = cutoffStatus,
             StatusColor = cutoffColor,
             Description = "Максимальная частота, выше которой сигнал отсутствует. Настоящий lossless сохраняет полный спектр до частоты Найквиста. Lossy-кодеки (MP3, AAC) обрезают высокие частоты для экономии места.",
@@ -254,7 +325,7 @@ public partial class AudioFileViewModel : ObservableObject
         {
             string shelfLabel = r.ShelfType switch
             {
-                "Brickwall" => "Кирпичная стена (lossy-кодек)",
+                "Brickwall" => isMp3OrAac ? "Кирпичная стена (норма для MP3/AAC)" : "Кирпичная стена (lossy-кодек)",
                 "Filtered" => "Фильтрованный спад",
                 "Natural" => "Естественный спад",
                 _ => r.ShelfType
@@ -262,14 +333,24 @@ public partial class AudioFileViewModel : ObservableObject
             // Hi-Res: "Filtered" above 22kHz is normal mastering LP, not suspicious
             string shelfStatus;
             string shelfColor;
-            if (r.ShelfType == "Natural")
-                (shelfStatus, shelfColor) = ("✓ Хорошо", "#2EA043");
+            if (isMp3OrAac)
+            {
+                // For lossy: Brickwall is EXPECTED, Natural is unusual
+                if (r.ShelfType == "Brickwall")
+                    (shelfStatus, shelfColor) = ("✓ Кодек", "#34d399");
+                else if (r.ShelfType == "Filtered")
+                    (shelfStatus, shelfColor) = ("⚠ Нехарактерно", "#fbbf24");
+                else
+                    (shelfStatus, shelfColor) = ("⚠ Нехарактерно", "#fbbf24");
+            }
+            else if (r.ShelfType == "Natural")
+                (shelfStatus, shelfColor) = ("✓ Хорошо", "#34d399");
             else if (r.ShelfType == "Filtered" && isHiRes && r.CutoffFrequency > 22100)
-                (shelfStatus, shelfColor) = ("✓ Ок", "#2EA043");
+                (shelfStatus, shelfColor) = ("✓ Ок", "#34d399");
             else if (r.ShelfType == "Filtered")
-                (shelfStatus, shelfColor) = ("⚠ Подозрительно", "#D29922");
+                (shelfStatus, shelfColor) = ("⚠ Подозрительно", "#fbbf24");
             else
-                (shelfStatus, shelfColor) = ("✗ Плохо", "#CF222E");
+                (shelfStatus, shelfColor) = ("✗ Плохо", "#f87171");
             items.Add(new MetricItem
             {
                 Category = "Спектр",
@@ -286,13 +367,20 @@ public partial class AudioFileViewModel : ObservableObject
         if (r.EncoderMatch != "None" && r.EncoderMatch.Length > 0)
         {
             bool isHiResMatch = r.EncoderMatch == "None (Hi-Res)";
+            string encStatus = isMp3OrAac && r.EncoderMatch.StartsWith("MP3") ? "✓ Определён"
+                : isHiResMatch ? "✓ Настоящий"
+                : r.EncoderMatch != "None" ? "⚠ Обнаружено"
+                : "—";
+            string encColor = (isMp3OrAac && r.EncoderMatch.StartsWith("MP3")) || isHiResMatch ? "#34d399"
+                : r.EncoderMatch != "None" ? "#fbbf24"
+                : "#6b7280";
             items.Add(new MetricItem
             {
                 Category = "Спектр",
                 Name = "Соответствие кодека",
                 Value = r.EncoderMatch,
-                Status = isHiResMatch ? "✓ Настоящий" : "⚠ Обнаружено",
-                StatusColor = isHiResMatch ? "#2EA043" : "#D29922",
+                Status = encStatus,
+                StatusColor = encColor,
                 Description = "Частота среза сопоставлена с известными кодеками. Каждый lossy-кодек имеет характерную частоту среза.",
                 Typical = "MP3 128 → 16 кГц\nMP3 256 → 18 кГц\nMP3 320 / AAC → 20 кГц"
             });
@@ -305,14 +393,14 @@ public partial class AudioFileViewModel : ObservableObject
             Name = "Теоретический предел (Найквист)",
             Value = $"{nyquist:F0} Гц",
             Status = "—",
-            StatusColor = "#585b70",
+            StatusColor = "#6b7280",
             Description = "Теорема Котельникова: полезный сигнал = Sample Rate / 2. Для 44.1 кГц предел — 22.05 кГц, для 48 кГц — 24 кГц.",
             Typical = "44.1 кГц → 22 050 Гц\n48 кГц → 24 000 Гц\n96 кГц → 48 000 Гц"
         });
 
         // Artifacts
         string artStatus = r.ArtifactLevel == "None" ? "✓ Чисто" : r.ArtifactLevel == "Weak" ? "⚠ Слабые" : "✗ Обнаружены";
-        string artColor = r.ArtifactLevel == "None" ? "#2EA043" : r.ArtifactLevel == "Weak" ? "#D29922" : "#CF222E";
+        string artColor = r.ArtifactLevel == "None" ? "#34d399" : r.ArtifactLevel == "Weak" ? "#fbbf24" : "#f87171";
         string artValue = r.ArtifactLevel;
         if (r.ArtifactType != "None" && r.ArtifactType.Length > 0)
             artValue += $" ({r.ArtifactType})";
@@ -332,7 +420,7 @@ public partial class AudioFileViewModel : ObservableObject
 
         // DR
         string drStatus = r.DynamicRange >= 10 ? "✓ Аудиофил" : r.DynamicRange >= 6 ? "✓ Хорошо" : r.DynamicRange >= 3 ? "⚠ Сжато" : "✗ Пережато";
-        string drColor = r.DynamicRange >= 6 ? "#2EA043" : r.DynamicRange >= 3 ? "#D29922" : "#CF222E";
+        string drColor = r.DynamicRange >= 6 ? "#34d399" : r.DynamicRange >= 3 ? "#fbbf24" : "#f87171";
         items.Add(new MetricItem
         {
             Category = "Динамика",
@@ -346,7 +434,7 @@ public partial class AudioFileViewModel : ObservableObject
 
         // True Peak
         string tpStatus = r.TruePeakDb <= 0 ? "✓ Чисто" : r.TruePeakDb <= 1 ? "⚠ Искажения" : "✗ Перегруз";
-        string tpColor = r.TruePeakDb <= 0 ? "#2EA043" : r.TruePeakDb <= 1 ? "#D29922" : "#CF222E";
+        string tpColor = r.TruePeakDb <= 0 ? "#34d399" : r.TruePeakDb <= 1 ? "#fbbf24" : "#f87171";
         items.Add(new MetricItem
         {
             Category = "Динамика",
@@ -365,14 +453,14 @@ public partial class AudioFileViewModel : ObservableObject
             Name = "Sample Peak (цифровой пик)",
             Value = $"{r.SamplePeakDb:F1} dBFS",
             Status = r.SamplePeakDb < 0 ? "✓ Ок" : r.SamplePeakDb < 0.1 ? "⚠ Потолок" : "✗ Клипп",
-            StatusColor = r.SamplePeakDb < 0 ? "#2EA043" : r.SamplePeakDb < 0.1 ? "#D29922" : "#CF222E",
+            StatusColor = r.SamplePeakDb < 0 ? "#34d399" : r.SamplePeakDb < 0.1 ? "#fbbf24" : "#f87171",
             Description = "Максимальное значение амплитуды среди цифровых сэмплов. 0 dBFS — цифровой потолок. Идеальный запас: от −0.1 до −1.0 dBFS.",
             Typical = "<0 dBFS — норма\n=0 dBFS — возможен клиппинг"
         });
 
         // Clipping
         string clipStatus = r.ClippingPercent <= 0 ? "✓ Нет" : r.ClippingPercent < 0.5 ? "⚠ Единично" : r.ClippingPercent < 5 ? "⚠ Заметно" : "✗ Сильный";
-        string clipColor = r.ClippingPercent <= 0 ? "#2EA043" : r.ClippingPercent < 0.5 ? "#D29922" : "#CF222E";
+        string clipColor = r.ClippingPercent <= 0 ? "#34d399" : r.ClippingPercent < 0.5 ? "#fbbf24" : "#f87171";
         items.Add(new MetricItem
         {
             Category = "Динамика",
@@ -386,7 +474,7 @@ public partial class AudioFileViewModel : ObservableObject
 
         // LUFS
         string lufsStatus = r.IntegratedLufs < -16 ? "✓ Динамично" : r.IntegratedLufs < -11 ? "✓ Норма" : r.IntegratedLufs < -7 ? "⚠ Громко" : "✗ Пережато";
-        string lufsColor = r.IntegratedLufs < -11 ? "#2EA043" : r.IntegratedLufs < -7 ? "#D29922" : "#CF222E";
+        string lufsColor = r.IntegratedLufs < -11 ? "#34d399" : r.IntegratedLufs < -7 ? "#fbbf24" : "#f87171";
         string lufsLabel = r.IntegratedLufs < -100 ? "—" : $"{r.IntegratedLufs:F1} LUFS";
         items.Add(new MetricItem
         {
@@ -409,7 +497,7 @@ public partial class AudioFileViewModel : ObservableObject
                 Name = "Общий RMS (средняя громкость)",
                 Value = $"{overallRms:F1} dBFS",
                 Status = overallRms > -6 ? "⚠ Громко" : overallRms > -12 ? "✓ Норма" : "✓ Тихо",
-                StatusColor = overallRms > -6 ? "#D29922" : "#2EA043",
+                StatusColor = overallRms > -6 ? "#fbbf24" : "#34d399",
                 Description = "Среднеквадратичный уровень всего трека. Аналог колонки 'RMS' в foobar2000. Чем ближе к 0 — тем громче.",
                 Typical = "−12..−6 dBFS — норма\n>−6 — очень громко\n<−12 — тихо"
             });
@@ -419,7 +507,7 @@ public partial class AudioFileViewModel : ObservableObject
         if (r.Plr > 0)
         {
             string plrStatus = r.Plr >= 8 ? "✓ Хорошо" : r.Plr >= 6 ? "⚠ Сжато" : "✗ Пережато";
-            string plrColor = r.Plr >= 8 ? "#2EA043" : r.Plr >= 6 ? "#D29922" : "#CF222E";
+            string plrColor = r.Plr >= 8 ? "#34d399" : r.Plr >= 6 ? "#fbbf24" : "#f87171";
             items.Add(new MetricItem
             {
                 Category = "Динамика",
@@ -442,7 +530,7 @@ public partial class AudioFileViewModel : ObservableObject
             Name = "Битовая глубина",
             Value = $"{r.BitDepth} бит (эфф. {r.EffectiveBitDepth} бит)",
             Status = r.BitDepthSuspicious ? "⚠ Подозрительно" : "✓ Честно",
-            StatusColor = r.BitDepthSuspicious ? "#D29922" : "#2EA043",
+            StatusColor = r.BitDepthSuspicious ? "#fbbf24" : "#34d399",
             Description = "Соответствие заявленной битности реальной. Часто 16-битный файл сохраняют в 24-битный контейнер с нулями в младших битах — размер растёт, качество нет.",
             Typical = "Совпадает — честно\nМладшие биты нули — фейк"
         });
@@ -456,7 +544,7 @@ public partial class AudioFileViewModel : ObservableObject
                 Name = "Нулевые младшие биты",
                 Value = "Обнаружены",
                 Status = "✗ Фейк",
-                StatusColor = "#CF222E",
+                StatusColor = "#f87171",
                 Description = "Младшие 8 бит 24-битного файла всегда равны нулю — это 16-битный файл, сохранённый в 24-битном контейнере.",
                 Typical = "Не обнаружены — честный 24 бит\nОбнаружены — фейковый 24 бит"
             });
@@ -470,14 +558,14 @@ public partial class AudioFileViewModel : ObservableObject
             Name = "DC смещение",
             Value = $"L={r.DcOffsetL:F4}% R={r.DcOffsetR:F4}%",
             Status = hasDc ? "⚠ Обнаружено" : "✓ Нет",
-            StatusColor = hasDc ? "#D29922" : "#2EA043",
+            StatusColor = hasDc ? "#fbbf24" : "#34d399",
             Description = "Постоянная составляющая сигнала. Должно быть близко к 0.0000%. Наличие выше 0.01% съедает динамический диапазон и вызывает щелчки.",
             Typical = "0.0000% — норма\n>0.01% — дефект оцифровки"
         });
 
         // Phase
         string phaseStatus = r.Correlation >= 0 ? "✓ Норма" : "✗ Проблема";
-        string phaseColor = r.Correlation >= 0 ? "#2EA043" : "#CF222E";
+        string phaseColor = r.Correlation >= 0 ? "#34d399" : "#f87171";
         string phaseValue = $"{r.Correlation:F2}";
         if (!r.IsMonoCompatible) phaseValue += " (несовместимо с моно)";
         items.Add(new MetricItem
@@ -495,7 +583,7 @@ public partial class AudioFileViewModel : ObservableObject
         if (r.SampleRate >= 88200)
         {
             string upStatus = r.IsUpscale ? "✗ Апскейл" : "✓ Настоящий Hi-Res";
-            string upColor = r.IsUpscale ? "#CF222E" : "#2EA043";
+            string upColor = r.IsUpscale ? "#f87171" : "#34d399";
             string upValue = r.IsUpscale ? $"Апскейл (HF макс {r.MaxHfDb:F0} dB)" : $"Контент выше 22 кГц ({r.MaxHfDb:F0} dB)";
             items.Add(new MetricItem
             {
@@ -516,10 +604,115 @@ public partial class AudioFileViewModel : ObservableObject
             Name = "Каналы",
             Value = r.Channels == 1 ? "Моно" : r.Channels == 2 ? "Стерео" : $"{r.Channels} каналов",
             Status = "—",
-            StatusColor = "#585b70",
+            StatusColor = "#6b7280",
             Description = "Количество аудиоканалов в файле.",
             Typical = "1 — моно\n2 — стерео"
         });
+
+        // Fake Stereo
+        if (r.IsFakeStereo)
+        {
+            items.Add(new MetricItem
+            {
+                Category = "Техника",
+                Name = "Fake Stereo",
+                Value = "Моно в стерео-контейнере",
+                Status = "⚠ Обнаружено",
+                StatusColor = "#fbbf24",
+                Description = "Оба канала идентичны (корреляция >0.99, задержка <1 сэмпл). Фактически моно, сохранённое как стерео — занимает вдвое больше места без пользы.",
+                Typical = "Не обнаружено — нормальное стерео\nОбнаружено — моно в стерео"
+            });
+        }
+
+        // Abrupt Edges
+        if (r.HasAbruptEdges)
+        {
+            items.Add(new MetricItem
+            {
+                Category = "Техника",
+                Name = "Обрезанные края",
+                Value = "Обнаружены",
+                Status = "⚠ Тишина на границах",
+                StatusColor = "#fbbf24",
+                Description = "Первые/последние 500 мс трека имеют RMS ниже −60 dBFS при общем RMS выше −30. Вероятно, трек обрезан не по нулевой точке.",
+                Typical = "Не обнаружены — нормально\nОбнаружены — возможен щелчок при воспроизведении"
+            });
+        }
+
+        // ReplayGain Mismatch
+        if (r.ReplayGainMismatch)
+        {
+            items.Add(new MetricItem
+            {
+                Category = "Техника",
+                Name = "ReplayGain расхождение",
+                Value = $"RG: {r.ReplayGainTrackDb:F1} dB vs LUFS: {r.IntegratedLufs:F1}",
+                Status = "⚠ Расхождение >3 dB",
+                StatusColor = "#fbbf24",
+                Description = "Тег REPLAYGAIN_TRACK_GAIN расходится с измеренным Integrated LUFS более чем на 3 dB. Возможно, тег устарел или не соответствует реальной громкости.",
+                Typical = "<3 dB — норма\n>3 dB — расхождение"
+            });
+        }
+
+        // Bitrate & Compression
+        if ((r.AverageBitrateKbps > 0 || r.CompressionRatio > 0) && r.Mp3Bitrate == 0 && r.AacBitrate == 0)
+        {
+            items.Add(new MetricItem { Name = "Битрейт и сжатие", IsHeader = true });
+            if (r.AverageBitrateKbps > 0)
+            {
+                items.Add(new MetricItem
+                {
+                    Category = "Битрейт",
+                    Name = "Средний битрейт",
+                    Value = $"{(int)r.AverageBitrateKbps} kbps",
+                    Status = "—",
+                    StatusColor = "#6b7280",
+                    Description = "Реальный средний битрейт: (размер файла − метаданные) × 8 / длительность.",
+                    Typical = "CD FLAC: 700–1000 kbps\nHi-Res FLAC: 2000–5000 kbps\nMP3 320: ~320 kbps\nMP3 128: ~128 kbps"
+                });
+            }
+            if (r.CompressionRatio > 0)
+            {
+                string compStatus = r.CompressionRatio > 0.95 ? "⚠ Подозрительно" : r.CompressionRatio > 0.7 ? "✓ Норма" : "✓ Эффективно";
+                string compColor = r.CompressionRatio > 0.95 ? "#fbbf24" : "#34d399";
+                items.Add(new MetricItem
+                {
+                    Category = "Битрейт",
+                    Name = "Степень сжатия",
+                    Value = $"{r.CompressionRatio * 100:F0}%",
+                    Status = compStatus,
+                    StatusColor = compColor,
+                    Description = "Размер файла / несжатый размер. FLAC обычно сжимает до 50–70%. >95% — файл почти не сжат (возможно, внутри уже lossy).",
+                    Typical = "50–70% — норма для FLAC\n70–90% — слабое сжатие\n>95% — подозрительно"
+                });
+            }
+            if (r.MinFrameBitrateKbps > 0 && r.MaxFrameBitrateKbps > 0)
+            {
+                items.Add(new MetricItem
+                {
+                    Category = "Битрейт",
+                    Name = "Битрейт по фреймам",
+                    Value = $"{r.MinFrameBitrateKbps:F0}–{r.MaxFrameBitrateKbps:F0} kbps",
+                    Status = "—",
+                    StatusColor = "#6b7280",
+                    Description = "Мгновенный битрейт FLAC-фреймов (VBR). Показывает разброс: тихие участки vs громкие.",
+                    Typical = "FLAC VBR: битрейт меняется внутри трека в 2–5 раз"
+                });
+            }
+            if (r.IsSuspiciousBitrate)
+            {
+                items.Add(new MetricItem
+                {
+                    Category = "Битрейт",
+                    Name = "Подозрительный битрейт",
+                    Value = "⚠ Обнаружен",
+                    Status = "✗ Подозрительно",
+                    StatusColor = "#f87171",
+                    Description = "Битрейт не соответствует формату: слишком низкий для lossless (возможен транскод) или аномально высокое сжатие.",
+                    Typical = "Не обнаружен — норма\nОбнаружен — проверьте источник"
+                });
+            }
+        }
 
         if (r.Mp3Bitrate > 0)
         {
@@ -530,7 +723,7 @@ public partial class AudioFileViewModel : ObservableObject
                 Name = "Битрейт",
                 Value = $"{r.Mp3Bitrate} kbps",
                 Status = "—",
-                StatusColor = "#585b70",
+                StatusColor = "#6b7280",
                 Description = "Заявленный битрейт MP3-файла из заголовка."
             });
             if (r.Mp3Encoder.Length > 0 && r.Mp3Encoder != "Error")
@@ -541,12 +734,12 @@ public partial class AudioFileViewModel : ObservableObject
                     Name = "Кодер",
                     Value = r.Mp3Encoder,
                     Status = "—",
-                    StatusColor = "#585b70",
+                    StatusColor = "#6b7280",
                     Description = "Идентифицированный MP3-кодер (LAME, FhG, etc)."
                 });
             }
             string mp3QualStatus = r.Mp3QualityScore >= 80 ? "✓ Хороший рип" : r.Mp3QualityScore >= 50 ? "⚠ Средний" : "✗ Плохой";
-            string mp3QualColor = r.Mp3QualityScore >= 80 ? "#2EA043" : r.Mp3QualityScore >= 50 ? "#D29922" : "#CF222E";
+            string mp3QualColor = r.Mp3QualityScore >= 80 ? "#34d399" : r.Mp3QualityScore >= 50 ? "#fbbf24" : "#f87171";
             items.Add(new MetricItem
             {
                 Category = "MP3",
@@ -563,7 +756,7 @@ public partial class AudioFileViewModel : ObservableObject
 
         // Lossless Score
         string losslessStatus = r.LosslessScore >= 85 ? "✓ Отлично" : r.LosslessScore >= 60 ? "⚠ Средне" : "✗ Плохо";
-        string losslessColor = r.LosslessScore >= 85 ? "#2EA043" : r.LosslessScore >= 60 ? "#D29922" : "#CF222E";
+        string losslessColor = r.LosslessScore >= 85 ? "#34d399" : r.LosslessScore >= 60 ? "#fbbf24" : "#f87171";
         string losslessLabel = r.DetectedType.Length > 0 ? r.DetectedType : r.Authenticity;
         items.Add(new MetricItem
         {
@@ -580,7 +773,7 @@ public partial class AudioFileViewModel : ObservableObject
         if (r.HiResScore > 0 || r.SampleRate >= 88200)
         {
             string hrStatus = r.HiResScore >= 70 ? "✓ Настоящий Hi-Res" : r.HiResScore >= 40 ? "⚠ Сомнительно" : "✗ Апскейл";
-            string hrColor = r.HiResScore >= 70 ? "#2EA043" : r.HiResScore >= 40 ? "#D29922" : "#CF222E";
+            string hrColor = r.HiResScore >= 70 ? "#34d399" : r.HiResScore >= 40 ? "#fbbf24" : "#f87171";
             items.Add(new MetricItem
             {
                 Category = "Итог",
@@ -600,14 +793,14 @@ public partial class AudioFileViewModel : ObservableObject
             Name = "Охват метрик",
             Value = $"{r.MetricsCoverage:F0}%",
             Status = r.MetricsCoverage >= 80 ? "✓ Хорошо" : r.MetricsCoverage >= 60 ? "⚠ Средне" : "✗ Мало",
-            StatusColor = r.MetricsCoverage >= 80 ? "#2EA043" : r.MetricsCoverage >= 60 ? "#D29922" : "#CF222E",
+            StatusColor = r.MetricsCoverage >= 80 ? "#34d399" : r.MetricsCoverage >= 60 ? "#fbbf24" : "#f87171",
             Description = "Процент метрик, прошедших пороговые значения. Показывает, насколько 'чист' файл по всем проверкам. 100% — все метрики в норме.",
             Typical = "80–100% — отлично\n60–79% — есть замечания\n<60% — много проблем"
         });
 
         // Quality
         string qualStatus = r.QualityScorePercent >= 70 ? "✓ Отлично" : r.QualityScorePercent >= 40 ? "⚠ Нормально" : "✗ Плохо";
-        string qualColor = r.QualityScorePercent >= 70 ? "#2EA043" : r.QualityScorePercent >= 40 ? "#D29922" : "#CF222E";
+        string qualColor = r.QualityScorePercent >= 70 ? "#34d399" : r.QualityScorePercent >= 40 ? "#fbbf24" : "#f87171";
         items.Add(new MetricItem
         {
             Category = "Итог",
@@ -620,11 +813,12 @@ public partial class AudioFileViewModel : ObservableObject
         });
 
         // Decision
-        string decColor = r.Decision.StartsWith("KEEP") ? "#2EA043" : r.Decision == "INVESTIGATE" ? "#D29922" : "#CF222E";
+        string decColor = r.Decision.StartsWith("KEEP") ? "#34d399" : r.Decision == "INVESTIGATE" ? "#fbbf24" : "#f87171";
         string decText = r.Decision switch
         {
-            "KEEP" => "ОСТАВИТЬ",
-            "KEEP (poor master)" => "ОСТАВИТЬ (плохой мастеринг)",
+            "KEEP (Excellent)" => "ОСТАВИТЬ (отлично)",
+            "KEEP (Good)" => "ОСТАВИТЬ (хорошо)",
+            "KEEP (Fair)" => "ОСТАВИТЬ (приемлемо)",
             "INVESTIGATE" => "ПРОВЕРИТЬ",
             "REPLACE" => "ЗАМЕНИТЬ",
             _ => r.Decision
@@ -649,7 +843,7 @@ public partial class AudioFileViewModel : ObservableObject
                 Name = "Почему?",
                 Value = r.WhyVerdict,
                 Status = "—",
-                StatusColor = "#585b70",
+                StatusColor = "#6b7280",
                 Description = r.WhyVerdict
             });
         }
@@ -662,16 +856,17 @@ public partial class AudioFileViewModel : ObservableObject
     public WriteableBitmap? GetOrBuildSpectrogram()
     {
         if (SpectrogramBitmap != null) return SpectrogramBitmap;
-        if (_rawSpectro == null || _spectroWidth < 1 || _spectroHeight < 1) return null;
+        if (_rawSpectroKey == null) return null;
+        if (!_spectroCache.TryGet(_rawSpectroKey, out var rawSpectro) || rawSpectro == null) return null;
 
-        var bmp = _spectroRenderer.Render(_rawSpectro, _spectroWidth, _spectroHeight);
+        var bmp = _spectroRenderer.Render(rawSpectro, _spectroWidth, _spectroHeight);
         SpectrogramBitmap = bmp;
         return bmp;
     }
 
     public void ClearSpectrogramData()
     {
-        _rawSpectro = null;
+        _rawSpectroKey = null;
         SpectrogramBitmap = null;
     }
 
