@@ -21,4 +21,6 @@ public class AlbumGroup
     public int KeepCount { get; set; }
     public int InvestigateCount { get; set; }
     public int ReplaceCount { get; set; }
+    public double WorstTrackScore { get; set; }
+    public string WorstTrackDecision { get; set; } = "";
 }

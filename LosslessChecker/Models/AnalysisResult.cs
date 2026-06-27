@@ -89,6 +89,10 @@ public record AnalysisResult
 
     public int ActualBitrate { get; init; }
 
+    public string ClaimedType { get; init; } = "";
+    public string DetectedType { get; init; } = "";
+    public string Bandwidth { get; init; } = "";
+
     public string WhyVerdict { get; init; } = "";
 
     public AnalysisStatus AnalysisStatus { get; init; } = AnalysisStatus.Pending;

@@ -7,7 +7,7 @@ public static class TagReader
 {
     public record AudioTags(
         string Artist, string Album, string Genre, string Title,
-        byte[]? CoverData, string CoverMime);
+        byte[]? CoverData, string CoverMime, uint Year);
 
     public static AudioTags? Read(string filePath)
     {
@@ -20,6 +20,7 @@ public static class TagReader
             string album = tag.Album ?? "";
             string genre = string.Join(", ", tag.Genres) ?? "";
             string title = tag.Title ?? Path.GetFileNameWithoutExtension(filePath);
+            uint year = tag.Year > 0 ? tag.Year : 0;
 
             byte[]? cover = null;
             string mime = "";
@@ -34,7 +35,7 @@ public static class TagReader
                 string.IsNullOrWhiteSpace(album) ? "Unknown Album" : album,
                 string.IsNullOrWhiteSpace(genre) ? "" : genre,
                 string.IsNullOrWhiteSpace(title) ? Path.GetFileNameWithoutExtension(filePath) : title,
-                cover, mime);
+                cover, mime, year);
         }
         catch
         {
