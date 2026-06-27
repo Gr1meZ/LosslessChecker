@@ -109,6 +109,22 @@ public partial class SpectrogramWindow : Window
             OverlayCanvas.Children.Add(line);
         }
 
+            if (Math.Abs(nyquist - 22050) < 1)
+            {
+                double ratio22 = (Math.Log10(22050) - logMin) / logRange;
+                double y22 = canvasH - ratio22 * canvasH;
+                var tb22 = new TextBlock
+                {
+                    Text = "22.05k",
+                    Foreground = AxisBrush,
+                    FontSize = 9,
+                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
+                };
+                System.Windows.Controls.Canvas.SetLeft(tb22, 0);
+                System.Windows.Controls.Canvas.SetTop(tb22, y22 - 7);
+                OverlayCanvas.Children.Add(tb22);
+            }
+
             double[] standardMarkers = { 1000, 5000, 10000, 16000, 20000, 22050 };
             foreach (var freq in standardMarkers)
             {
