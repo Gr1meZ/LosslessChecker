@@ -20,6 +20,23 @@ public class AudioPipeline
     private readonly VinylDetector _vinyl = new();
     private readonly ContainerAnalyzer _container = new();
 
+    private static string GetClaimedType(string filePath, int sampleRate)
+    {
+        var ext = System.IO.Path.GetExtension(filePath).ToLowerInvariant();
+        string type = ext switch
+        {
+            ".mp3" => "MP3",
+            ".m4a" => "AAC",
+            ".flac" => "FLAC",
+            ".wav" => "WAV",
+            ".alac" => "ALAC",
+            _ => "Unknown"
+        };
+        if (sampleRate >= 88200)
+            type = $"HI-RES {sampleRate / 1000:F0}k";
+        return type;
+    }
+
     public AnalysisResult Analyze(AudioFileInfo fileInfo, CancellationToken ct = default)
     {
         var result = new AnalysisResult
@@ -213,6 +230,24 @@ public class AudioPipeline
                 AacBitrate = aacBitrate,
                 IsAac = isAac,
                 ActualBitrate = actualBitrate
+            };
+
+            result = result with
+            {
+                ClaimedType = GetClaimedType(fileInfo.FilePath, sampleRate)
+            };
+
+            var (bandwidth, detectedType) = CutoffDetector.ClassifyBandwidth(
+                cutoffHz, shelfType, sampleRate, hasArtifacts, artifactLevel,
+                hasSpectralHoles, maxHfDb, bitResult.LsbZeroPadded,
+                bitResult.EffectiveBitDepth, bitDepth, containerResult.IsCdAligned,
+                containerResult.IsMqa, containerResult.IsHdcd,
+                tpResult.ClippingPercent > 0, encoderMatch);
+
+            result = result with
+            {
+                Bandwidth = bandwidth,
+                DetectedType = detectedType
             };
 
             bool isMp3 = fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
