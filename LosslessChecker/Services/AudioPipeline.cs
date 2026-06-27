@@ -251,15 +251,17 @@ public class AudioPipeline
             };
 
             bool isMp3 = fileInfo.FilePath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
+            bool isMp3Detected = detectedType.StartsWith("MP3") || isMp3;
+            bool isAacDetected = detectedType.StartsWith("AAC") || isAac;
 
             double mp3QualityScore = 0;
-            if (isMp3 && mp3Bitrate > 0)
+            double aacQualityScore = 0;
+
+            if (isMp3Detected)
             {
                 mp3QualityScore = ComputeMp3Quality(cutoffHz, sampleRate, mp3Bitrate, actualBitrate, artifactLevel, hasSpectralHoles);
             }
-
-            double aacQualityScore = 0;
-            if (isAac && aacBitrate > 0)
+            else if (isAacDetected)
             {
                 aacQualityScore = ComputeAacQuality(cutoffHz, sampleRate, aacBitrate, actualBitrate, artifactLevel, hasSpectralHoles);
             }
@@ -277,15 +279,15 @@ public class AudioPipeline
                 result = result with { Authenticity = _losslessScorer.Classify(result) };
             }
 
-            var losslessScore = isMp3 ? mp3QualityScore
-                : isAac ? aacQualityScore
+            var losslessScore = isMp3Detected ? mp3QualityScore
+                : isAacDetected ? aacQualityScore
                 : _losslessScorer.Score(result);
             var hiResScore = _losslessScorer.ScoreHiRes(result);
 
             double qualityPercent;
             string decision;
 
-            if (isMp3)
+            if (isMp3Detected)
             {
                 var (masterScore, _) = _qualityScorer.Score(result);
                 qualityPercent = mp3QualityScore * 0.6 + masterScore * 0.4;
@@ -293,7 +295,7 @@ public class AudioPipeline
                     : mp3QualityScore >= 50 ? "INVESTIGATE"
                     : "REPLACE";
             }
-            else if (isAac)
+            else if (isAacDetected)
             {
                 var (masterScore, _) = _qualityScorer.Score(result);
                 qualityPercent = aacQualityScore * 0.6 + masterScore * 0.4;
