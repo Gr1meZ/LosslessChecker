@@ -24,7 +24,7 @@ public class CutoffDetector
 
         int hfStartBin = (int)(10000.0 / nyquist * (FftSize / 2));
 
-        var framePowers = new List<(int pos, double[] power, double hfEnergy)>();
+        var hfEnergies = new List<(int pos, double hfEnergy)>();
 
         for (int pos = 0; pos + FftSize <= samples.Length; pos += HopSize)
         {
@@ -34,30 +34,46 @@ public class CutoffDetector
             Array.Clear(imag, 0, FftSize);
             fft.Direct(real, imag);
 
-            var power = new double[FftSize / 2];
             double hfEnergy = 0;
-            for (int i = 0; i < FftSize / 2; i++)
-            {
-                power[i] = (double)real[i] * real[i] + (double)imag[i] * imag[i];
-                if (i >= hfStartBin) hfEnergy += power[i];
-            }
-            framePowers.Add((pos, power, hfEnergy));
+            for (int i = hfStartBin; i < FftSize / 2; i++)
+                hfEnergy += (double)real[i] * real[i] + (double)imag[i] * imag[i];
+
+            hfEnergies.Add((pos, hfEnergy));
         }
 
-        if (framePowers.Count == 0)
+        if (hfEnergies.Count == 0)
             return (nyquist, 0, Array.Empty<double>());
 
-        var sortedByHf = framePowers.OrderByDescending(f => f.hfEnergy).ToList();
+        var sortedByHf = hfEnergies.OrderByDescending(f => f.hfEnergy).ToList();
         int topCount = Math.Max(1, sortedByHf.Count / 6);
-        var topFrames = sortedByHf.Take(topCount).ToList();
+        double hfThreshold = sortedByHf[topCount - 1].hfEnergy;
+        var topPositions = new HashSet<int>(sortedByHf.Take(topCount).Select(f => f.pos));
 
+        // Second pass: re-run FFT only for top frames to build averaged spectrum
         var avgMagnitudes = new double[FftSize / 2];
-        foreach (var (_, power, _) in topFrames)
-            for (int i = 0; i < FftSize / 2; i++)
-                avgMagnitudes[i] += power[i];
+        int accumulatedFrames = 0;
 
-        for (int i = 0; i < avgMagnitudes.Length; i++)
-            avgMagnitudes[i] = Math.Sqrt(avgMagnitudes[i] / topFrames.Count);
+        for (int pos = 0; pos + FftSize <= samples.Length; pos += HopSize)
+        {
+            if (!topPositions.Contains(pos)) continue;
+
+            Array.Copy(samples, pos, frame, 0, FftSize);
+            for (int i = 0; i < FftSize; i++) frame[i] *= window[i];
+            Array.Copy(frame, real, FftSize);
+            Array.Clear(imag, 0, FftSize);
+            fft.Direct(real, imag);
+
+            for (int i = 0; i < FftSize / 2; i++)
+                avgMagnitudes[i] += Math.Sqrt((double)real[i] * real[i] + (double)imag[i] * imag[i]);
+
+            accumulatedFrames++;
+        }
+
+        if (accumulatedFrames > 0)
+        {
+            for (int i = 0; i < avgMagnitudes.Length; i++)
+                avgMagnitudes[i] /= accumulatedFrames;
+        }
 
         var (cutoff, cutoffSlope) = FindCutoffByDerivative(avgMagnitudes, nyquist);
         return (cutoff, cutoffSlope, avgMagnitudes);
@@ -74,15 +90,13 @@ public class CutoffDetector
 
     public static int MapCutoffToBitrate(double cutoffHz, string shelfType, int actualBitrate, int sampleRate)
     {
-        if (shelfType == "Brickwall")
-        {
-            if (cutoffHz <= 16500) return 128;
-            if (cutoffHz <= 18500) return 192;
-            if (cutoffHz <= 20000) return 256;
-            if (cutoffHz <= 20500) return 320;
-            return 0;
-        }
+        var nyquist = sampleRate / 2.0;
+        if (cutoffHz >= nyquist * 0.97) return 0;
 
+        if (cutoffHz <= 16500) return 128;
+        if (cutoffHz <= 18500) return 192;
+        if (cutoffHz <= 20000) return 256;
+        if (cutoffHz <= 20500) return 320;
         return 0;
     }
 
@@ -258,7 +272,7 @@ public class CutoffDetector
             {
                 <= 16500 => "MP3 128-192 kbps",
                 <= 18500 => "MP3 192-256 kbps",
-                <= 20000 => "MP3 320 / AAC 256 kbps",
+                <= 20500 => "MP3 320 / AAC 256 kbps",
                 <= 21500 => "Possible LP filter",
                 _ => "None"
             };
@@ -268,11 +282,31 @@ public class CutoffDetector
         if (!isHiRes && ratio >= 0.95)
             encoderMatch = "None";
 
-        // Override: if cutoff > 90% Nyquist, this is the ADC's anti-aliasing filter,
-        // not a lossy codec brickwall. Don't penalize as Brickwall.
-        if (ratio >= 0.90 && shelfType == "Brickwall")
+        // 48kHz guard: brickwall at >90% Nyquist (21600 Hz) is a mastering LP filter, not a codec.
+        // MP3 at 48kHz cuts off at ≤20.5 kHz (85%). Anything above is too high for a lossy encoder.
+        if (sampleRate == 48000 && ratio >= 0.90 && shelfType == "Brickwall")
+            shelfType = "Filtered";
+
+        // Override: only reclassify brickwall as natural if ratio >= 0.97
+        // (cutoff within 3% of Nyquist). ADC anti-aliasing filters sit right at
+        // Nyquist. Below 0.97, even a "brickwall" at 20kHz/44.1kHz (ratio 0.907)
+        // is suspicious — it matches MP3 320 / AAC 256 cutoff and should NOT be
+        // cleared as "Natural".
+        if (ratio >= 0.97 && shelfType == "Brickwall")
             shelfType = "Natural";
 
+        return (encoderMatch, shelfType);
+    }
+
+    public (string encoderMatch, string shelfType) ClassifyCutoff(
+        double cutoffHz, double cutoffSlope, int sampleRate, bool isVinylRip)
+    {
+        var (encoderMatch, shelfType) = ClassifyCutoff(cutoffHz, cutoffSlope, sampleRate);
+        if (isVinylRip && cutoffHz >= 16000 && cutoffHz <= 18000 && shelfType == "Filtered")
+        {
+            shelfType = "Vinyl Rolloff";
+            encoderMatch = "None (Vinyl Transfer)";
+        }
         return (encoderMatch, shelfType);
     }
 
@@ -306,7 +340,7 @@ public class CutoffDetector
             return ("Fake 24-bit", "FAKE 24bit");
 
         // 1b. Transcode: brickwall + artifacts in non-MP3/non-AAC container
-        if (shelfType == "Brickwall" && (artifactLevel == "Strong" || artifactLevel == "Medium") && hasSpectralHoles)
+        if (shelfType == "Brickwall" && (artifactLevel == "Strong" || artifactLevel == "Medium"))
         {
             if (cutoffHz <= 17000)
                 return ("16kHz", "MP3 128");
@@ -324,17 +358,20 @@ public class CutoffDetector
             if (maxHfDb < -60)
                 return (bw, "UPSCALE (CD→HI-RES)");
             if (maxHfDb < -45)
-                return (bw, "UNCERTAIN");
+                return (bw, "SUSPICIOUS HI-RES");
             return (bw, $"HI-RES {sampleRate / 1000:F0}k");
         }
 
         // 3. Lossless — any file without lossy compression artifacts
         if (!isHiRes)
         {
-            bool hasLossyArtifacts = (artifactLevel == "Strong" || artifactLevel == "Medium") 
-                && (hasSpectralHoles || shelfType == "Brickwall");
-            
-            if (!hasLossyArtifacts || shelfType == "Natural")
+            bool hasLossyArtifacts = shelfType == "Brickwall"
+                && (artifactLevel != "None" || cutoffHz < nyquist * 0.90)
+                || ((artifactLevel == "Strong" || artifactLevel == "Medium") && hasSpectralHoles);
+
+            bool isTooLowForLossless = cutoffHz < nyquist * 0.80 && artifactLevel != "None";
+
+            if ((!hasLossyArtifacts || shelfType == "Natural") && !isTooLowForLossless)
             {
                 string bw = cutoffHz >= nyquist * 0.92 ? "Full Range" : $"{cutoffHz / 1000:F0}kHz";
                 string dt;
@@ -348,6 +385,15 @@ public class CutoffDetector
                 if (cutoffHz < nyquist * 0.90 && artifactLevel == "None")
                     dt = "LOSSLESS (Mastered LPF)";
 
+                return (bw, dt);
+            }
+
+            // Very low cutoff with non-brickwall shelf and weak artifacts
+            // — likely analog tape, vintage recording, or aggressive mastering LPF
+            if (artifactLevel == "Weak" && shelfType != "Brickwall" && cutoffHz < nyquist * 0.80)
+            {
+                string bw = $"{cutoffHz / 1000:F0}kHz";
+                string dt = isCdAligned && sampleRate == 44100 ? "LOSSLESS (LEGACY)" : "LOSSLESS (ROLLOFF)";
                 return (bw, dt);
             }
 
@@ -380,7 +426,41 @@ public class CutoffDetector
             return (bw, dt);
         }
 
-        // 5. UNCERTAIN fallback (truly ambiguous cases)
+        // 5. UNCERTAIN fallback — refine based on available evidence
+        if (shelfType == "Brickwall" && (artifactLevel == "Strong" || artifactLevel == "Medium"))
+            return ($"{cutoffHz / 1000:F0}kHz", "LOSSY (TRANSCODE)");
+        if (shelfType == "Filtered" && artifactLevel == "None" && cutoffHz >= nyquist * 0.85)
+            return ($"{cutoffHz / 1000:F0}kHz", "LOSSLESS (WEB)");
+        if (cutoffHz < nyquist * 0.85 && artifactLevel == "None")
+            return ($"{cutoffHz / 1000:F0}kHz", "LOSSLESS (Mastered LPF)");
         return ($"{cutoffHz / 1000:F0}kHz", "UNCERTAIN");
+    }
+
+    /// <summary>
+    /// Checks whether the spectrum above the cutoff is effectively absolute silence
+    /// (lossy codec signature) vs. analog noise or dither (legitimate LPF).
+    /// </summary>
+    public static bool HasAbsoluteSilence(double[] averagedSpectrum, double cutoffHz, double sampleRate)
+    {
+        var nyquist = sampleRate / 2.0;
+        int cutoffBin = (int)(cutoffHz / nyquist * averagedSpectrum.Length);
+        cutoffBin = Math.Max(1, Math.Min(cutoffBin, averagedSpectrum.Length - 1));
+
+        if (cutoffBin >= averagedSpectrum.Length - 1) return false;
+
+        // Look for absolute digital silence above cutoff
+        int silenceCount = 0;
+        int checkCount = 0;
+        for (int i = cutoffBin; i < averagedSpectrum.Length; i++)
+        {
+            // Values below ~1e-15 are well below any dither floor.
+            // Analog noise or shaped dither sits at ~1e-6 to 1e-10.
+            if (averagedSpectrum[i] < 1e-15)
+                silenceCount++;
+            checkCount++;
+        }
+
+        // Classify as codec silence only if >95% of bins above cutoff are dead
+        return checkCount > 10 && (double)silenceCount / checkCount > 0.95;
     }
 }

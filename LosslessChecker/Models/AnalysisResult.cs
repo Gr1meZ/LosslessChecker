@@ -73,6 +73,10 @@ public record AnalysisResult
 
     public string Authenticity { get; init; } = "";
     public double LosslessScore { get; init; }
+    public double AuthenticityScore { get; init; }
+    public double MasteringScore { get; init; }
+    public string AuthenticityVerdict { get; init; } = "";
+    public string MasteringVerdict { get; init; } = "";
     public double HiResScore { get; init; }
     public int QualityScore { get; init; }
     public double QualityScorePercent { get; init; }

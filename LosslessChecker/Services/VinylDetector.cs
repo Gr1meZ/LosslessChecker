@@ -39,7 +39,35 @@ public class VinylDetector
         double hfRatio = avgHf / avgMid;
 
         // Vinyl signature: elevated rumble + HF noise shelf (not a clean drop)
-        bool isVinyl = rumbleRatio > 2.0 && hfRatio > 0.01;
+        // At 44.1kHz, HF detection is unreliable (Nyquist = 22.05kHz). Require
+        // stronger rumble ratio and check for 50/60 Hz power line hum.
+        bool isVinyl;
+        if (sampleRate < 88200)
+        {
+            double humEnergy = 0;
+            int bin50Hz = (int)(50.0 / nyquist * bins);
+            int bin60Hz = (int)(60.0 / nyquist * bins);
+            int humRange = Math.Max(1, (int)(5.0 / nyquist * bins));
+            for (int i = Math.Max(0, bin50Hz - humRange); i <= Math.Min(bins - 1, bin60Hz + humRange); i++)
+                humEnergy += spectrum[i];
+            double avgHum = humEnergy / (Math.Min(bins - 1, bin60Hz + humRange) - Math.Max(0, bin50Hz - humRange) + 1);
+            double humRatio = avgHum / avgMid;
+
+            isVinyl = rumbleRatio > 4.0 && humRatio > 1.5;
+        }
+        else
+        {
+            isVinyl = rumbleRatio > 2.0 && hfRatio > 0.01;
+        }
+
+        if (isVinyl)
+        {
+            double hfMinDb = hfCount > 0
+                ? 20.0 * Math.Log10(Math.Max(spectrum[hfStart..].Min(), 1e-10) / (avgMid > 1e-10 ? avgMid : 1e-10))
+                : -200;
+            if (hfMinDb < -90 && rumbleRatio < 0.5)
+                isVinyl = false;
+        }
 
         return new VinylResult(isVinyl, Math.Round(rumbleRatio, 2), Math.Round(hfRatio, 4));
     }
