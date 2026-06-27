@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
-using System.Windows.Media;
 
 namespace LosslessChecker.Converters;
 
@@ -9,10 +8,10 @@ public class ScoreToColorConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        var score = value switch
+        double score = value switch
         {
             int i => i,
-            double d => (int)d,
+            double d => d,
             _ => -1
         };
 
@@ -20,14 +19,11 @@ public class ScoreToColorConverter : IValueConverter
         {
             >= 70 => "LosslessGreenBrush",
             >= 40 => "SuspiciousAmberBrush",
-            >= 7 => "LosslessGreenBrush",
-            >= 4 => "SuspiciousAmberBrush",
-            >= 1 => "FakeRedBrush",
-            _ => "NeutralGrayBrush"
+            _ => "FakeRedBrush"
         };
 
         return System.Windows.Application.Current.TryFindResource(key) as System.Windows.Media.Brush
-            ?? new SolidColorBrush(Colors.Gray);
+            ?? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Gray);
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
