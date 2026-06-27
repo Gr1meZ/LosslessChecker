@@ -25,7 +25,7 @@
                     Foreground="{DynamicResource FgPrimaryBrush}" BorderThickness="0" Margin="4" Cursor="Hand"/>
         </ToolBar>
 
-        <Grid Grid.Row="1" Margin="50,10,50,30">
+        <Grid Grid.Row="1" Margin="65,10,50,30">
             <Image x:Name="SpectrogramImage" Stretch="Fill"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
             <Canvas x:Name="OverlayCanvas" IsHitTestVisible="False"/>

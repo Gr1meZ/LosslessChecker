@@ -95,7 +95,7 @@ public partial class SpectrogramWindow : Window
                 FontSize = 9,
                 FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
             };
-            System.Windows.Controls.Canvas.SetLeft(tb, 0);
+            System.Windows.Controls.Canvas.SetLeft(tb, -42);
             System.Windows.Controls.Canvas.SetTop(tb, y - 7);
             OverlayCanvas.Children.Add(tb);
 
@@ -108,6 +108,24 @@ public partial class SpectrogramWindow : Window
             };
             OverlayCanvas.Children.Add(line);
         }
+
+            double[] standardMarkers = { 1000, 5000, 10000, 16000, 20000, 22050 };
+            foreach (var freq in standardMarkers)
+            {
+                if (freq > nyquist) continue;
+                double ratio2 = (Math.Log10(freq) - logMin) / logRange;
+                double y2 = canvasH - ratio2 * canvasH;
+
+                var dashLine = new Line
+                {
+                    X1 = 0, Y1 = y2, X2 = canvasW, Y2 = y2,
+                    Stroke = GridBrush,
+                    StrokeThickness = 0.8,
+                    Opacity = 0.5,
+                    StrokeDashArray = new DoubleCollection { 4, 2 }
+                };
+                OverlayCanvas.Children.Add(dashLine);
+            }
 
         if (_durationSec > 0)
         {
@@ -169,9 +187,14 @@ public partial class SpectrogramWindow : Window
 
     private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        _isPanning = true;
-        _lastMousePos = e.GetPosition(this);
-        SpectrogramImage.CaptureMouse();
+        if (e.ChangedButton == System.Windows.Input.MouseButton.Middle ||
+            (e.ChangedButton == System.Windows.Input.MouseButton.Left
+             && System.Windows.Input.Keyboard.Modifiers == ModifierKeys.Shift))
+        {
+            _isPanning = true;
+            _lastMousePos = e.GetPosition(this);
+            SpectrogramImage.CaptureMouse();
+        }
     }
 
     private void Window_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
