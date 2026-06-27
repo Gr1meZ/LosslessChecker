@@ -49,6 +49,14 @@ public partial class AudioFileViewModel : ObservableObject
     [ObservableProperty] private byte[]? _coverData;
     [ObservableProperty] private WriteableBitmap? _spectrogramBitmap;
     [ObservableProperty] private int _mp3Bitrate;
+    [ObservableProperty] private string _claimedType = "";
+    [ObservableProperty] private string _detectedType = "";
+    [ObservableProperty] private string _bandwidth = "";
+    [ObservableProperty] private string _sizePerMinute = "";
+    [ObservableProperty] private System.Windows.Media.Brush _sizePerMinuteColor =
+        System.Windows.Media.Brushes.Gray;
+    [ObservableProperty] private System.Windows.Media.Brush _detectedTypeColor =
+        System.Windows.Media.Brushes.Gray;
 
     public int AacBitrate { get; private set; }
     public bool IsAac { get; private set; }
@@ -173,6 +181,28 @@ public partial class AudioFileViewModel : ObservableObject
         AacBitrate = r.AacBitrate;
         IsAac = r.IsAac;
         ActualBitrate = r.ActualBitrate;
+        ClaimedType = r.ClaimedType;
+        DetectedType = r.DetectedType;
+        Bandwidth = r.Bandwidth;
+
+        double mbPerMin = r.DurationSeconds > 0
+            ? new System.IO.FileInfo(r.FilePath).Length / (1024.0 * 1024.0) / (r.DurationSeconds / 60.0)
+            : 0;
+        SizePerMinute = $"{mbPerMin:F1}";
+
+        if (mbPerMin < 5)
+            SizePerMinuteColor = GetBrush("FgMutedBrush");
+        else if (mbPerMin < 12)
+            SizePerMinuteColor = GetBrush("LosslessGreenBrush");
+        else if (mbPerMin < 25)
+            SizePerMinuteColor = GetBrush("AccentBrush");
+        else
+            SizePerMinuteColor = GetBrush("AccentBrush");
+
+        bool match = string.Equals(r.ClaimedType, r.DetectedType, StringComparison.OrdinalIgnoreCase)
+            || (r.DetectedType.StartsWith("LOSSLESS") && r.ClaimedType is "FLAC" or "ALAC" or "WAV")
+            || (r.DetectedType.StartsWith("HI-RES") && r.ClaimedType.StartsWith("HI-RES"));
+        DetectedTypeColor = match ? GetBrush("LosslessGreenBrush") : GetBrush("FakeRedBrush");
 
         if (r.SpectrogramDb is { Length: > 0 })
         {
@@ -326,8 +356,8 @@ public partial class AudioFileViewModel : ObservableObject
             Value = $"DR{r.DynamicRange:F0}",
             Status = drStatus,
             StatusColor = drColor,
-            Description = "Разница между пиковым и средним уровнем громкости (TT DR Meter). Высокий DR — живой, дышащий звук. Низкий DR — 'кирпичная стена' лимитера, утомляет слух (Loudness War). Откалибровано под foobar2000.",
-            Typical = "DR10+ — аудиофил (джаз, классика)\nDR6–9 — хорошо (рок, качественный поп)\nDR3–5 — сжато (современный поп, EDM)\nDR<3 — пережато (громко, плоско)"
+            Description = "Разница между пиковым и средним уровнем громкости (TT DR Meter). Высокий DR — живой, дышащий звук. Низкий DR — не обязательно плохо, зависит от жанра.",
+            Typical = "DR12+ — аудиофил (джаз, классика, акустика, винил)\nDR8-11 — золотая середина (рок 80-90х, инди, симфо-метал)\nDR5-7 — плотный звук (современный метал, альт-рок, пост-гранж, поп)\nDR3-4 — кирпичная стена (EDM, экстрим-метал, гиперпоп)"
         });
 
         // True Peak
@@ -695,5 +725,11 @@ public partial class AudioFileViewModel : ObservableObject
             System.Windows.Clipboard.SetText(sb.ToString());
         }
         catch { }
+    }
+
+    private static System.Windows.Media.Brush GetBrush(string key)
+    {
+        return System.Windows.Application.Current.TryFindResource(key) as System.Windows.Media.Brush
+            ?? System.Windows.Media.Brushes.Gray;
     }
 }
