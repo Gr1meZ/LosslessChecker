@@ -387,7 +387,8 @@ public partial class MainViewModel : ObservableObject
             var queue = new ConcurrentQueue<AudioFileViewModel>(vms);
             int processed = 0;
 
-            int concurrency = Math.Min(2, Environment.ProcessorCount);
+            int concurrency = Math.Max(1, Environment.ProcessorCount / 2);
+            using var memoryGate = new SemaphoreSlim(4, 4);
             var tasks = Enumerable.Range(0, concurrency).Select(async _ =>
             {
                 while (queue.TryDequeue(out var vm) && !ct.IsCancellationRequested)
@@ -399,28 +400,36 @@ public partial class MainViewModel : ObservableObject
                         CurrentlyProcessing = $"Обработка: {vm.FileName} [{processed + 1}/{TotalFiles}]";
                     });
 
-                    var fileInfo = new AudioFileInfo(vm.FilePath, vm.FileName, 0);
-                    var result = await Task.Run(() => _analyzer.Analyze(fileInfo, ct), ct);
-
-                    vm.ApplyResult(result);
-
-                    int done = Interlocked.Increment(ref processed);
-                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                    await memoryGate.WaitAsync(ct);
+                    try
                     {
-                        ProcessedFiles = done;
-                        Progress = TotalFiles > 0 ? (double)done / TotalFiles * 100.0 : 0;
+                        var fileInfo = new AudioFileInfo(vm.FilePath, vm.FileName, 0);
+                        var result = await Task.Run(() => _analyzer.Analyze(fileInfo, ct), ct);
 
-                        if (result.AnalysisStatus == AnalysisStatus.Error)
-                            ErrorCount++;
-                        else if (result.Decision.StartsWith("KEEP"))
-                            KeepCount++;
-                        else if (result.Decision == "INVESTIGATE")
-                            InvestigateCount++;
-                        else if (result.Decision == "REPLACE")
-                            ReplaceCount++;
+                        vm.ApplyResult(result);
 
-                        UpdateSummary();
-                    });
+                        int done = Interlocked.Increment(ref processed);
+                        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            ProcessedFiles = done;
+                            Progress = TotalFiles > 0 ? (double)done / TotalFiles * 100.0 : 0;
+
+                            if (result.AnalysisStatus == AnalysisStatus.Error)
+                                ErrorCount++;
+                            else if (result.Decision.StartsWith("KEEP"))
+                                KeepCount++;
+                            else if (result.Decision == "INVESTIGATE")
+                                InvestigateCount++;
+                            else if (result.Decision == "REPLACE")
+                                ReplaceCount++;
+
+                            UpdateSummary();
+                        });
+                    }
+                    finally
+                    {
+                        memoryGate.Release();
+                    }
                 }
             });
 
@@ -499,7 +508,8 @@ public partial class MainViewModel : ObservableObject
             int newProcessed = 0;
             int startTotal = ProcessedFiles;
 
-            int concurrency = Math.Min(2, Environment.ProcessorCount);
+            int concurrency = Math.Max(1, Environment.ProcessorCount / 2);
+            using var memoryGate = new SemaphoreSlim(4, 4);
             var tasks = Enumerable.Range(0, concurrency).Select(async _ =>
             {
                 while (queue.TryDequeue(out var vm) && !ct.IsCancellationRequested)
@@ -512,21 +522,31 @@ public partial class MainViewModel : ObservableObject
                         CurrentlyProcessing = $"Обработка: {vm.FileName} [{startTotal + current}/{startTotal + newTotal}]";
                     });
 
-                    var fileInfo = new AudioFileInfo(vm.FilePath, vm.FileName, 0);
-                    var result = await Task.Run(() => _analyzer.Analyze(fileInfo, ct), ct);
-                    vm.ApplyResult(result);
-                    int done = Interlocked.Increment(ref newProcessed);
-                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                    await memoryGate.WaitAsync(ct);
+                    try
                     {
-                        TotalFiles = startTotal + newProcessed;
-                        ProcessedFiles = startTotal + newProcessed;
-                        Progress = (double)(startTotal + done) / (startTotal + newTotal) * 100.0;
-                        if (result.AnalysisStatus == AnalysisStatus.Error) ErrorCount++;
-                        else if (result.Decision.StartsWith("KEEP")) KeepCount++;
-                        else if (result.Decision == "INVESTIGATE") InvestigateCount++;
-                        else if (result.Decision == "REPLACE") ReplaceCount++;
-                        UpdateSummary();
-                    });
+                        var fileInfo = new AudioFileInfo(vm.FilePath, vm.FileName, 0);
+                        var result = await Task.Run(() => _analyzer.Analyze(fileInfo, ct), ct);
+
+                        vm.ApplyResult(result);
+
+                        int done = Interlocked.Increment(ref newProcessed);
+                        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            TotalFiles = startTotal + newTotal;
+                            ProcessedFiles = startTotal + newProcessed;
+                            Progress = (double)(startTotal + done) / (startTotal + newTotal) * 100.0;
+                            if (result.AnalysisStatus == AnalysisStatus.Error) ErrorCount++;
+                            else if (result.Decision.StartsWith("KEEP")) KeepCount++;
+                            else if (result.Decision == "INVESTIGATE") InvestigateCount++;
+                            else if (result.Decision == "REPLACE") ReplaceCount++;
+                            UpdateSummary();
+                        });
+                    }
+                    finally
+                    {
+                        memoryGate.Release();
+                    }
                 }
             });
             await Task.WhenAll(tasks);
