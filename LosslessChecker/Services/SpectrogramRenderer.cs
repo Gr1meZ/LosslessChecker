@@ -9,6 +9,23 @@ namespace LosslessChecker.Services;
 
 public class SpectrogramRenderer
 {
+    private static readonly (double t, byte r, byte g, byte b)[] DbColormapPoints = new[]
+    {
+        (0.000, (byte)0,   (byte)0,   (byte)0),
+        (0.083, (byte)0,   (byte)0,   (byte)26),
+        (0.167, (byte)0,   (byte)0,   (byte)26),
+        (0.250, (byte)0,   (byte)0,   (byte)64),
+        (0.333, (byte)0,   (byte)0,   (byte)128),
+        (0.417, (byte)0,   (byte)0,   (byte)255),
+        (0.500, (byte)75,  (byte)0,   (byte)130),
+        (0.583, (byte)128, (byte)0,   (byte)128),
+        (0.667, (byte)255, (byte)0,   (byte)255),
+        (0.750, (byte)255, (byte)0,   (byte)0),
+        (0.833, (byte)255, (byte)128, (byte)0),
+        (0.917, (byte)255, (byte)255, (byte)0),
+        (1.000, (byte)255, (byte)255, (byte)255),
+    };
+
     private static readonly uint[] ColormapLut = BuildColormapLut();
 
     public WriteableBitmap Render(float[] dbValues, int dataWidth, int dataHeight)
@@ -25,9 +42,9 @@ public class SpectrogramRenderer
 
             for (int i = 0; i < span.Length; i += 4)
             {
-                span[i] = 0x1B;
-                span[i + 1] = 0x11;
-                span[i + 2] = 0x11;
+                span[i] = 0;
+                span[i + 1] = 0;
+                span[i + 2] = 0;
                 span[i + 3] = 0xFF;
             }
 
@@ -70,11 +87,8 @@ public class SpectrogramRenderer
         srcStartCol = Math.Clamp(srcStartCol, 0, dataWidth - 1);
         srcEndCol = Math.Clamp(srcEndCol, 0, dataWidth);
 
-        double logMin = Math.Log10(20.0);
-        double logMax = Math.Log10(nyquist);
-        double logRange = logMax - logMin;
-        int srcTopRow = dataHeight - 1 - (int)((Math.Log10(highFreq) - logMin) / logRange * dataHeight);
-        int srcBottomRow = dataHeight - 1 - (int)((Math.Log10(lowFreq) - logMin) / logRange * dataHeight);
+        int srcTopRow = dataHeight - 1 - (int)(highFreq / nyquist * dataHeight);
+        int srcBottomRow = dataHeight - 1 - (int)(lowFreq / nyquist * dataHeight);
         srcTopRow = Math.Clamp(srcTopRow, 0, dataHeight - 1);
         srcBottomRow = Math.Clamp(srcBottomRow, 0, dataHeight - 1);
         if (srcTopRow > srcBottomRow) (srcTopRow, srcBottomRow) = (srcBottomRow, srcTopRow);
@@ -93,7 +107,7 @@ public class SpectrogramRenderer
             var span = pixels.AsSpan(0, outWidth * outHeight * 4);
             for (int i = 0; i < span.Length; i += 4)
             {
-                span[i] = 0x1B; span[i + 1] = 0x11; span[i + 2] = 0x11; span[i + 3] = 0xFF;
+                span[i] = 0; span[i + 1] = 0; span[i + 2] = 0; span[i + 3] = 0xFF;
             }
 
             for (int ox = 0; ox < outWidth; ox++)
@@ -134,23 +148,31 @@ public class SpectrogramRenderer
         for (int i = 0; i < 256; i++)
         {
             double t = i / 255.0;
-            var (r, g, b) = HotColormap(t);
+            var (r, g, b) = DbColormap(t);
             lut[i] = (uint)(r | (g << 8) | (b << 16));
         }
         return lut;
     }
 
-    private static (byte r, byte g, byte b) HotColormap(double t)
+    internal static (byte r, byte g, byte b) DbColormap(double t)
     {
-        if (t <= 0) return (0, 0, 0);
-        if (t < 1.0/8.0) { double s = t * 8; return ((byte)(0), (byte)(0), (byte)(25 + 110 * s)); }
-        if (t < 2.0/8.0) { double s = (t - 1.0/8.0) * 8; return ((byte)(40 * s), (byte)(0), (byte)(135 + 65 * s)); }
-        if (t < 3.0/8.0) { double s = (t - 2.0/8.0) * 8; return ((byte)(40 + 70 * s), (byte)(0), (byte)(200)); }
-        if (t < 4.0/8.0) { double s = (t - 3.0/8.0) * 8; return ((byte)(110 + 120 * s), (byte)(40 * s), (byte)(200 - 20 * s)); }
-        if (t < 5.0/8.0) { double s = (t - 4.0/8.0) * 8; return ((byte)(230 + 25 * s), (byte)(40 + 20 * s), (byte)(180 * (1 - s))); }
-        if (t < 6.0/8.0) { double s = (t - 5.0/8.0) * 8; return ((byte)(255), (byte)(60 + 70 * s), (byte)(0)); }
-        if (t < 7.0/8.0) { double s = (t - 6.0/8.0) * 8; return ((byte)(255), (byte)(130 + 125 * s), (byte)(0)); }
-        double s2 = (t - 7.0/8.0) * 8;
-        return ((byte)(255), (byte)(255), (byte)(180 * s2));
+        if (t <= 0) return (DbColormapPoints[0].r, DbColormapPoints[0].g, DbColormapPoints[0].b);
+        if (t >= 1) return (DbColormapPoints[^1].r, DbColormapPoints[^1].g, DbColormapPoints[^1].b);
+
+        for (int i = 1; i < DbColormapPoints.Length; i++)
+        {
+            if (t <= DbColormapPoints[i].t)
+            {
+                var prev = DbColormapPoints[i - 1];
+                var next = DbColormapPoints[i];
+                double s = (t - prev.t) / (next.t - prev.t);
+                return (
+                    (byte)(prev.r + (next.r - prev.r) * s),
+                    (byte)(prev.g + (next.g - prev.g) * s),
+                    (byte)(prev.b + (next.b - prev.b) * s));
+            }
+        }
+
+        return (DbColormapPoints[^1].r, DbColormapPoints[^1].g, DbColormapPoints[^1].b);
     }
 }

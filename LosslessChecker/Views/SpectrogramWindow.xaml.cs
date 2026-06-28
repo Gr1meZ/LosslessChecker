@@ -79,33 +79,16 @@ public partial class SpectrogramWindow : Window
         double canvasH = OverlayCanvas.ActualHeight;
         if (canvasW < 10 || canvasH < 10) return;
 
-        double nyquist = _sampleRate / 2.0;
-        double logMin = Math.Log10(20.0);
-        double logMax = Math.Log10(nyquist);
-        double logRange = logMax - logMin;
+        double fullBand = _sampleRate;
 
-        var freqLabelList = new List<double>();
+        double step = NiceLinearStep(fullBand);
+        for (double freq = step; freq <= fullBand; freq += step)
         {
-            double v = 20;
-            int step = 0;
-            while (v <= nyquist + 0.5)
-            {
-                freqLabelList.Add(v);
-                v *= step == 0 ? 2.5 : 2.0;
-                step = (step + 1) % 3;
-            }
-            if (freqLabelList.Count > 0 && Math.Abs(freqLabelList[^1] - nyquist) > 1)
-                freqLabelList.Add(Math.Round(nyquist));
-        }
-        double[] freqLabels = freqLabelList.ToArray();
-
-        foreach (var freq in freqLabels)
-        {
-            double ratio = (Math.Log10(freq) - logMin) / logRange;
+            double ratio = freq / fullBand;
             double y = canvasH - ratio * canvasH;
             var tb = new TextBlock
             {
-                Text = freq >= 1000 ? $"{freq / 1000:0.##}k" : $"{freq:F0}",
+                Text = freq >= 1000 ? $"{freq / 1000:0.#}k" : $"{freq:F0}",
                 Foreground = AxisBrush,
                 FontSize = 9,
                 FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
@@ -124,24 +107,10 @@ public partial class SpectrogramWindow : Window
             OverlayCanvas.Children.Add(line);
         }
 
-        var markerList = new List<double>();
+        double halfStep = step / 2;
+        for (double freq = halfStep; freq <= fullBand; freq += step)
         {
-            double v = 500;
-            int step = 0;
-            while (v <= nyquist + 0.5)
-            {
-                markerList.Add(v);
-                v *= step == 0 ? 2.5 : 2.0;
-                step = (step + 1) % 3;
-            }
-            if (markerList.Count > 0 && Math.Abs(markerList[^1] - nyquist) > 1)
-                markerList.Add(Math.Round(nyquist));
-        }
-        double[] standardMarkers = markerList.ToArray();
-
-        foreach (var freq in standardMarkers)
-        {
-            double ratio2 = (Math.Log10(freq) - logMin) / logRange;
+            double ratio2 = freq / fullBand;
             double y2 = canvasH - ratio2 * canvasH;
 
             var dashLine = new Line
@@ -180,7 +149,7 @@ public partial class SpectrogramWindow : Window
 
         if (_cutoffHz > 0)
         {
-            double cutRatio = (Math.Log10(Math.Max(_cutoffHz, 20.0)) - logMin) / logRange;
+            double cutRatio = Math.Clamp(_cutoffHz / fullBand, 0, 1);
             double cutY = canvasH - cutRatio * canvasH;
             var cutLine = new Line
             {
@@ -204,6 +173,18 @@ public partial class SpectrogramWindow : Window
         }
     }
 
+    private static double NiceLinearStep(double nyquist)
+    {
+        double raw = nyquist / 12;
+        double mag = Math.Pow(10, Math.Floor(Math.Log10(raw)));
+        double res = raw / mag;
+        if (res < 1.5) raw = mag;
+        else if (res < 3.5) raw = 2 * mag;
+        else if (res < 7.5) raw = 5 * mag;
+        else raw = 10 * mag;
+        return Math.Max(raw, 100);
+    }
+
     private void DrawLegend()
     {
         LegendCanvas.Children.Clear();
@@ -219,7 +200,7 @@ public partial class SpectrogramWindow : Window
         for (int row = 0; row < steps; row++)
         {
             double t = 1.0 - (double)row / (steps - 1);
-            var (r, g, b) = SpectrogramColormap(t);
+            var (r, g, b) = LosslessChecker.Services.SpectrogramRenderer.DbColormap(t);
             for (int col = 0; col < barWidth; col++)
             {
                 int idx = (row * barWidth + col) * 4;
@@ -241,10 +222,10 @@ public partial class SpectrogramWindow : Window
         Canvas.SetLeft(img, barLeft);
         Canvas.SetTop(img, 0);
 
-        double[] dbLabels = { 0, -12, -24, -36, -48, -60, -72, -84, -96 };
+        double[] dbLabels = { 0, -10, -20, -30, -40, -50, -60, -70, -80, -90, -100, -110, -120 };
         foreach (double db in dbLabels)
         {
-            double t = db / -96.0;
+            double t = db / -120.0;
             double y = t * canvasH;
             var tb = new TextBlock
             {
@@ -257,20 +238,6 @@ public partial class SpectrogramWindow : Window
             Canvas.SetTop(tb, y - 7);
             LegendCanvas.Children.Add(tb);
         }
-    }
-
-    private static (byte r, byte g, byte b) SpectrogramColormap(double t)
-    {
-        if (t <= 0) return (0, 0, 0);
-        if (t < 1.0/8.0) { double s = t * 8; return ((byte)(0), (byte)(0), (byte)(25 + 110 * s)); }
-        if (t < 2.0/8.0) { double s = (t - 1.0/8.0) * 8; return ((byte)(40 * s), (byte)(0), (byte)(135 + 65 * s)); }
-        if (t < 3.0/8.0) { double s = (t - 2.0/8.0) * 8; return ((byte)(40 + 70 * s), (byte)(0), (byte)(200)); }
-        if (t < 4.0/8.0) { double s = (t - 3.0/8.0) * 8; return ((byte)(110 + 120 * s), (byte)(40 * s), (byte)(200 - 20 * s)); }
-        if (t < 5.0/8.0) { double s = (t - 4.0/8.0) * 8; return ((byte)(230 + 25 * s), (byte)(40 + 20 * s), (byte)(180 * (1 - s))); }
-        if (t < 6.0/8.0) { double s = (t - 5.0/8.0) * 8; return ((byte)(255), (byte)(60 + 70 * s), (byte)(0)); }
-        if (t < 7.0/8.0) { double s = (t - 6.0/8.0) * 8; return ((byte)(255), (byte)(130 + 125 * s), (byte)(0)); }
-        double s2 = (t - 7.0/8.0) * 8;
-        return ((byte)(255), (byte)(255), (byte)(180 * s2));
     }
 
     private void Window_MouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)

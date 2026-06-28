@@ -10,7 +10,7 @@ public class SpectrogramAccumulator
     private const int FftSize = 4096;
     private const int FreqBins = 1024;
     private const int MaxCols = 2048;
-    private const double DbFloor = -96.0;
+    private const double DbFloor = -120.0;
     private const double DefaultDurationSec = 300.0;
 
     private readonly float[] _window = Window.Hann(FftSize);
@@ -86,15 +86,12 @@ public class SpectrogramAccumulator
             if (_columns[col] == null)
                 _columns[col] = new float[FreqBins];
 
-            double nyquist = _sampleRate / 2.0;
-            double logMin = Math.Log10(20.0);
-            double logMax = Math.Log10(nyquist);
-            double logRange = logMax - logMin;
-            double binsPerHz = (double)(FftSize / 2) / nyquist;
+            double sampleRate = _sampleRate;
+            double binsPerHz = (double)(FftSize / 2) / (sampleRate / 2.0);
 
             for (int j = 0; j < FreqBins; j++)
             {
-                double freq = Math.Pow(10, logMin + logRange * j / (FreqBins - 1));
+                double freq = sampleRate * j / (FreqBins - 1);
                 double binIdx = freq * binsPerHz;
                 int bin0 = Math.Clamp((int)binIdx, 0, FftSize / 2 - 1);
                 int bin1 = Math.Min(bin0 + 1, FftSize / 2 - 1);
@@ -138,12 +135,18 @@ public class SpectrogramAccumulator
             }
         }
 
+        double globalMax = 0;
+        for (int y = 0; y < FreqBins; y++)
+        {
+            if (perBandMaxMag[y] > globalMax) globalMax = perBandMaxMag[y];
+        }
+        double refMag = Math.Max(globalMax, 1e-10);
+
         for (int x = 0; x < actualCols; x++)
         {
             if (_columns[x] == null) continue;
             for (int y = 0; y < FreqBins; y++)
             {
-                double refMag = Math.Max(perBandMaxMag[y], 1e-10);
                 double db = 20.0 * Math.Log10(Math.Max(_columns[x][y], 1e-10) / refMag);
                 dbValues[x * FreqBins + y] = (float)Math.Clamp((db - DbFloor) / (-DbFloor), 0, 1);
             }
