@@ -4,7 +4,7 @@
         xmlns:converters="clr-namespace:LosslessChecker.Converters"
         xmlns:models="clr-namespace:LosslessChecker.Models"
         xmlns:viewmodels="clr-namespace:LosslessChecker.ViewModels"
-        Title="LosslessChecker — Анализ аутентичности аудио"
+        Title="LosslessChecker"
         Icon="pack://application:,,,/Resources/app.ico"
         Height="900" Width="1400"
         WindowStartupLocation="CenterScreen"
@@ -146,6 +146,7 @@
         <Border Grid.Row="0" Style="{StaticResource GlassCardStyle}" Padding="10" Margin="0,0,0,8">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
@@ -353,8 +354,6 @@
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="Срез" Width="60" Binding="{Binding CutoffFrequency, StringFormat={}{0:F0}}"
-                                         SortMemberPath="CutoffFrequency"/>
                     <DataGridTemplateColumn Header="Длит." Width="55"
                                               SortMemberPath="DurationSeconds">
                         <DataGridTemplateColumn.CellTemplate>
@@ -365,6 +364,18 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="Размер" Width="70"
+                                         SortMemberPath="FileSizeDisplay">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{Binding FileSizeColor}"/>
+                                <Setter Property="FontFamily" Value="Consolas"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                        <DataGridTextColumn.Binding>
+                            <Binding Path="FileSizeDisplay" FallbackValue="—"/>
+                        </DataGridTextColumn.Binding>
+                    </DataGridTextColumn>
                     <DataGridTextColumn Header="Формат" Binding="{Binding Format}" Width="90"
                                          SortMemberPath="Format"/>
                     <DataGridTextColumn Header="Битрейт" Width="60"
@@ -378,35 +389,25 @@
                             <Binding Path="DisplayBitrate" FallbackValue="—"/>
                         </DataGridTextColumn.Binding>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="Размер" Width="70"
-                                         SortMemberPath="FileSizeDisplay">
+                    <DataGridTextColumn Header="По анализу" Binding="{Binding DetectedType}" Width="105"
+                                          SortMemberPath="DetectedType">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{Binding FileSizeColor}"/>
-                                <Setter Property="FontFamily" Value="Consolas"/>
+                                <Setter Property="Foreground" Value="{Binding DetectedTypeColor}"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
-                        <DataGridTextColumn.Binding>
-                            <Binding Path="FileSizeDisplay" FallbackValue="—"/>
-                        </DataGridTextColumn.Binding>
                     </DataGridTextColumn>
+                    <DataGridTextColumn Header="Срез" Width="60" Binding="{Binding CutoffFrequency, StringFormat={}{0:F0}}"
+                                         SortMemberPath="CutoffFrequency"/>
                     <DataGridTextColumn Header="DR" Binding="{Binding DynamicRange, StringFormat={}{0:F0}}" Width="40"
                                          SortMemberPath="DynamicRange"/>
-                    <DataGridTextColumn Header="Кач-во" Binding="{Binding QualityScorePercent, StringFormat={}{0:F0}%}" Width="55"
+                    <DataGridTextColumn Header="Качество" Binding="{Binding QualityScorePercent, StringFormat={}{0:F0}%}" Width="55"
                                          SortMemberPath="QualityScorePercent">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Foreground" Value="{Binding QualityScorePercent, Converter={StaticResource ScoreToColor}}"/>
                                 <Setter Property="FontWeight" Value="Bold"/>
                                 <Setter Property="FontSize" Value="12"/>
-                            </Style>
-                        </DataGridTextColumn.ElementStyle>
-                    </DataGridTextColumn>
-                    <DataGridTextColumn Header="По анализу" Binding="{Binding DetectedType}" Width="105"
-                                          SortMemberPath="DetectedType">
-                        <DataGridTextColumn.ElementStyle>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{Binding DetectedTypeColor}"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>

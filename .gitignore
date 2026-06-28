@@ -1,8 +1,23 @@
+# Build output
 bin/
 obj/
 /packages/
+
+# IDE
 riderModule.iml
 /_ReSharper.Caches/
+.idea/
+.vs/
+*.user
+*.suo
+*.cache
 
-# SDD internal
+# AI/agent generated
 .superpowers/
+.opencode/
+docs/superpowers/
+AGENTS.md
+
+# OS
+.DS_Store
+Thumbs.db
