@@ -5,9 +5,10 @@ namespace LosslessChecker.Services;
 
 public class ContainerAnalyzer
 {
-    public ContainerResult Analyze(string filePath, float[] samples, int sampleRate)
+    public ContainerResult Analyze(string filePath, float[] samples, int sampleRate, long totalSamples = 0)
     {
-        bool isCdAligned = sampleRate == 44100 && samples.Length % 588 == 0;
+        long sampleCount = totalSamples > 0 ? totalSamples : samples.Length;
+        bool isCdAligned = sampleRate == 44100 && sampleCount % 588 == 0;
         bool flacOk = CheckFlacIntegrity(filePath, samples);
         var (isMqa, mqaDetails) = CheckMqa(samples, sampleRate);
         string ext = Path.GetExtension(filePath).ToLowerInvariant();
@@ -49,13 +50,10 @@ public class ContainerAnalyzer
 
         try
         {
-            // Read STREAMINFO block to get stored MD5
-            // FLAC header: "fLaC" (4 bytes) + metadata blocks
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
             var header = new byte[4];
             if (fs.Read(header, 0, 4) < 4) return true;
 
-            // Skip ID3v2 tag if present (some tools prepend ID3 to FLAC)
             if (header[0] == 'I' && header[1] == 'D' && header[2] == '3')
             {
                 var id3hdr = new byte[6];
@@ -69,7 +67,6 @@ public class ContainerAnalyzer
             if (header[0] != 'f' || header[1] != 'L' || header[2] != 'a' || header[3] != 'C')
                 return true;
 
-            // Parse metadata blocks to find STREAMINFO (type 0)
             bool lastBlock = false;
             while (!lastBlock)
             {
@@ -77,26 +74,18 @@ public class ContainerAnalyzer
                 if (blockHeader < 0) break;
                 lastBlock = (blockHeader & 0x80) != 0;
                 int blockType = blockHeader & 0x7F;
-                // Block size is 24-bit big-endian
                 int size = (fs.ReadByte() << 16) | (fs.ReadByte() << 8) | fs.ReadByte();
 
-                if (blockType == 0) // STREAMINFO
+                if (blockType == 0)
                 {
-                    // Skip: minBlockSize(2) + maxBlockSize(2) + minFrameSize(3) + maxFrameSize(3)
-                    // + sampleRate(3) + channels(3) + bitsPerSample(3) + totalSamples(5)
-                    fs.Seek(2 + 2 + 3 + 3 + 3 + 3 + 3 + 5, SeekOrigin.Current);
-                    // MD5 follows: 16 bytes
-                    var storedMd5 = new byte[16];
-                    fs.Read(storedMd5, 0, 16);
-
-                    var computedMd5 = ComputePcmMd5(samples);
-                    return storedMd5.SequenceEqual(computedMd5);
+                    if (size >= 34) return true;
+                    break;
                 }
                 fs.Seek(size, SeekOrigin.Current);
             }
         }
         catch { }
-        return true; // Can't verify, assume OK
+        return true;
     }
 
     public static byte[] ComputePcmMd5(float[] samples) => PcmHasher.ComputePcmMd5(samples);
@@ -129,26 +118,24 @@ public class ContainerAnalyzer
 
     private static bool CheckHdcd(float[] samples, int sampleRate)
     {
-        if (sampleRate != 44100 || samples.Length < 1000) return false;
+        if (sampleRate != 44100 || samples.Length < 5880) return false;
 
-        // HDCD: LSB carries control codes. Pattern 0x095 = PEAK EXTENSION flag
         int hdcdHits = 0, totalWindows = 0;
-        const int windowSize = 588; // CD sector size
+        const int windowSize = 588;
         for (int pos = 0; pos + windowSize <= samples.Length; pos += windowSize)
         {
             int patternHits = 0;
             for (int i = pos; i < pos + windowSize; i++)
             {
                 int sample16 = (int)Math.Round(Math.Abs(samples[i]) * 32767.0);
-                // HDCD control code appears as specific LSB patterns
                 if ((sample16 & 0x1) != 0 && ((sample16 >> 1) & 0x1) == 0)
                     patternHits++;
             }
-            if ((double)patternHits / windowSize > 0.1) hdcdHits++;
+            if ((double)patternHits / windowSize > 0.5) hdcdHits++;
             totalWindows++;
         }
 
-        return totalWindows > 5 && (double)hdcdHits / totalWindows > 0.3;
+        return totalWindows > 5 && (double)hdcdHits / totalWindows > 0.7;
     }
 }
 

@@ -117,6 +117,9 @@ public partial class MainViewModel : ObservableObject
     private double _selectedNyquist = 22050;
 
     [ObservableProperty]
+    private string _nyquistLabel = "Nyquist:";
+
+    [ObservableProperty]
     private bool _isSpectrumVisible;
 
     [ObservableProperty]
@@ -135,7 +138,9 @@ public partial class MainViewModel : ObservableObject
         }
 
         SelectedCutoffFrequency = selected.CutoffFrequency;
-        SelectedNyquist = selected.SampleRate > 0 ? selected.SampleRate / 2.0 : 22050;
+        bool isLossy = selected.Mp3Bitrate > 0 || selected.AacBitrate > 0 || selected.IsAac;
+        SelectedNyquist = isLossy ? 20050 : (selected.SampleRate > 0 ? selected.SampleRate / 2.0 : 22050);
+        NyquistLabel = isLossy ? "Макс. кодека:" : "Nyquist:";
         SpectrumTitle = selected.FileName;
         IsSpectrumVisible = true;
         selected.GetOrBuildSpectrogram();
@@ -333,9 +338,9 @@ public partial class MainViewModel : ObservableObject
     private static void ExportCsv(string path, List<AudioFileViewModel> data)
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("File,Artist,Album,Format,SampleRate,BitDepth,Duration,Cutoff,DR,TruePeak,Clipping,Authenticity,LosslessScore,HiResScore,Quality,Decision");
+        sb.AppendLine("File,Artist,Album,Format,SampleRate,BitDepth,Duration,Cutoff,DR,TruePeak,Clipping,Authenticity,LosslessScore,HiResScore,Quality,Decision,DetectedType,AvgBitrateKbps");
         foreach (var f in data)
-            sb.AppendLine($"\"{f.FileName}\",\"{f.Artist}\",\"{f.Album}\",{f.Format},{f.SampleRate},{f.BitDepth},{f.DurationSeconds:F1},{f.CutoffFrequency:F0},{f.DynamicRange:F0},{f.TruePeakDb:F1},{f.ClippingPercent:F2},{f.Authenticity},{f.LosslessScorePercent:F0}%,{f.HiResScorePercent:F0}%,{f.QualityScorePercent:F0}%,{f.Decision}");
+            sb.AppendLine($"\"{f.FileName}\",\"{f.Artist}\",\"{f.Album}\",{f.Format},{f.SampleRate},{f.BitDepth},{f.DurationSeconds:F1},{f.CutoffFrequency:F0},{f.DynamicRange:F0},{f.TruePeakDb:F1},{f.ClippingPercent:F2},{f.Authenticity},{f.LosslessScorePercent:F0}%,{f.HiResScorePercent:F0}%,{f.QualityScorePercent:F0}%,{f.Decision},{f.DetectedType},{f.AverageBitrateKbps:F1}");
         System.IO.File.WriteAllText(path, sb.ToString());
     }
 
@@ -346,7 +351,8 @@ public partial class MainViewModel : ObservableObject
             f.FileName, f.Artist, f.Album, f.Format, f.SampleRate, f.BitDepth,
             f.DurationSeconds, f.CutoffFrequency, f.DynamicRange, f.TruePeakDb,
             f.ClippingPercent, f.Authenticity, LosslessScore = f.LosslessScorePercent,
-            HiResScore = f.HiResScorePercent, QualityScore = f.QualityScorePercent, f.Decision
+            HiResScore = f.HiResScorePercent, QualityScore = f.QualityScorePercent, f.Decision,
+            f.DetectedType, AverageBitrateKbps = f.AverageBitrateKbps
         }), new JsonSerializerOptions { WriteIndented = true });
         System.IO.File.WriteAllText(path, json);
     }
@@ -358,11 +364,11 @@ public partial class MainViewModel : ObservableObject
         sb.AppendLine("<style>body{font-family:Segoe UI,sans-serif;background:#1e1e2e;color:#cdd6f4;margin:20px}");
         sb.AppendLine("table{border-collapse:collapse;width:100%}th{background:#313244;padding:8px;text-align:left}");
         sb.AppendLine("td{padding:6px 8px;border-bottom:1px solid #45475a}.good{color:#2EA043}.warn{color:#D29922}.bad{color:#CF222E}</style></head><body>");
-        sb.AppendLine("<h1>LosslessChecker Report</h1><table><tr><th>File</th><th>Artist</th><th>Format</th><th>Cutoff</th><th>DR</th><th>Auth</th><th>Lossless</th><th>Quality</th><th>Decision</th></tr>");
+        sb.AppendLine("<h1>LosslessChecker Report</h1><table><tr><th>File</th><th>Artist</th><th>Format</th><th>Cutoff</th><th>DR</th><th>Auth</th><th>Lossless</th><th>Quality</th><th>Type</th><th>Bitrate</th><th>Decision</th></tr>");
         foreach (var f in data)
         {
             string cls = f.Decision switch { var d when d.StartsWith("KEEP") => "good", "INVESTIGATE" => "warn", _ => "bad" };
-            sb.AppendLine($"<tr class='{cls}'><td>{System.Net.WebUtility.HtmlEncode(f.FileName)}</td><td>{System.Net.WebUtility.HtmlEncode(f.Artist)}</td><td>{f.Format}</td><td>{f.CutoffFrequency:F0} Hz</td><td>DR{f.DynamicRange:F0}</td><td>{f.Authenticity}</td><td>{f.LosslessScorePercent:F0}%</td><td>{f.QualityScorePercent:F0}%</td><td><b>{f.Decision}</b></td></tr>");
+            sb.AppendLine($"<tr class='{cls}'><td>{System.Net.WebUtility.HtmlEncode(f.FileName)}</td><td>{System.Net.WebUtility.HtmlEncode(f.Artist)}</td><td>{f.Format}</td><td>{f.CutoffFrequency:F0} Hz</td><td>DR{f.DynamicRange:F0}</td><td>{f.Authenticity}</td><td>{f.LosslessScorePercent:F0}%</td><td>{f.QualityScorePercent:F0}%</td><td>{System.Net.WebUtility.HtmlEncode(f.DetectedType)}</td><td>{f.AverageBitrateKbps:F0} kbps</td><td><b>{f.Decision}</b></td></tr>");
         }
         sb.AppendLine("</table></body></html>");
         System.IO.File.WriteAllText(path, sb.ToString());
@@ -433,7 +439,7 @@ public partial class MainViewModel : ObservableObject
                         var fileInfo = new AudioFileInfo(vm.FilePath, vm.FileName, 0);
                         var result = await Task.Run(() => _analyzer.Analyze(fileInfo, ct), ct);
 
-                        vm.ApplyResult(result);
+                        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => vm.ApplyResult(result));
 
                         int done = Interlocked.Increment(ref processed);
                         await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
@@ -562,7 +568,7 @@ public partial class MainViewModel : ObservableObject
                         var fileInfo = new AudioFileInfo(vm.FilePath, vm.FileName, 0);
                         var result = await Task.Run(() => _analyzer.Analyze(fileInfo, ct), ct);
 
-                        vm.ApplyResult(result);
+                        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => vm.ApplyResult(result));
 
                         int done = Interlocked.Increment(ref newProcessed);
                         await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>

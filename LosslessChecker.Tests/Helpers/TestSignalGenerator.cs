@@ -67,10 +67,10 @@ public static class TestSignalGenerator
             // Generate exact 16-bit audio stored as 24-bit float:
             // quantize to 16-bit integer, then represent as if zero-padded to 24-bit
             double raw = Math.Sin(TwoPi * freq * i / sampleRate);
-            int val24 = (int)Math.Round(raw * 8388607.0);
+            int val24 = (int)Math.Round(raw * 8388608.0);
             // Zero out lower 8 bits (simulating 16-bit in 24-bit container)
             val24 &= ~0xFF;
-            samples[i] = (float)(val24 / 8388607.0);
+            samples[i] = (float)(val24 / 8388608.0);
         }
         return samples;
     }

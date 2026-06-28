@@ -65,7 +65,13 @@ public class QualityScorer
 
         string decision;
         if (r.IsCorrupted) decision = "CORRUPTED";
-        else if (r.Authenticity == "MQA") decision = "MQA (needs decoder)";
+        else if (r.IsMqa) decision = "MQA (needs decoder)";
+        else if (r.DetectedType.StartsWith("MP3") || r.DetectedType.StartsWith("AAC"))
+        {
+            int cutoffBr = int.TryParse(r.DetectedType.Split(' ').Last(), out var br) ? br : 0;
+            int claimedBr = r.Mp3Bitrate > 0 ? r.Mp3Bitrate : r.AacBitrate;
+            decision = cutoffBr > 0 && claimedBr > 0 && cutoffBr < claimedBr ? "REPLACE" : "KEEP (Fair)";
+        }
         else if (authVerdict == "FALSE") decision = "REPLACE";
         else if (authVerdict == "UNCERTAIN") decision = "INVESTIGATE";
         else if (mastVerdict == "Excellent") decision = "KEEP (Excellent)";

@@ -16,7 +16,6 @@ public class PhaseAnalyzer : IChunkAccumulator<PhaseResult>
     private int _sampleRate, _blockSize;
     private double _sumSqM, _sumSqS;
     private int _samplesInBlock;
-    private readonly List<(double midRms, double sideRms)> _blockRatios = new();
 
     private readonly List<double> _correlations = new();
     private double _sumXY, _sumX2, _sumY2;
@@ -26,7 +25,6 @@ public class PhaseAnalyzer : IChunkAccumulator<PhaseResult>
 
     public void Reset()
     {
-        _blockRatios.Clear();
         _correlations.Clear();
         _sumSqM = _sumSqS = 0;
         _sumXY = _sumX2 = _sumY2 = 0;
@@ -94,10 +92,6 @@ public class PhaseAnalyzer : IChunkAccumulator<PhaseResult>
 
     private void FlushBlock()
     {
-        if (_samplesInBlock == 0) return;
-        double midRms = Math.Sqrt(_sumSqM / _samplesInBlock);
-        double sideRms = Math.Sqrt(_sumSqS / _samplesInBlock);
-        _blockRatios.Add((midRms, sideRms));
         _sumSqM = _sumSqS = 0;
         _samplesInBlock = 0;
     }
@@ -121,55 +115,8 @@ public class PhaseAnalyzer : IChunkAccumulator<PhaseResult>
         double avgCorr = _correlations.Count > 0 ? _correlations.Average() : 1.0;
         bool isMonoCompatible = avgCorr >= 0;
 
-        if (_blockRatios.Count < 2)
-            return new PhaseResult(Math.Round(avgCorr, 2), isMonoCompatible);
-
-        var ratios = _blockRatios
-            .Select(b => b.sideRms / Math.Max(b.midRms, 1e-10))
-            .OrderBy(r => r).ToList();
-        double p85 = ratios[(int)(ratios.Count * PercentileThreshold)];
-
         double avgCorrVal = Math.Round(avgCorr, 2);
         return new PhaseResult(avgCorrVal, isMonoCompatible);
-    }
-
-    public (double flatnessMid, double flatnessSide) ComputeSpectralFlatness(float[] reservoirMono, int sampleRate)
-    {
-        if (reservoirMono.Length < 4096)
-            return (0.5, 0.5);
-
-        int fftSize = 4096;
-        var fft = new Fft(fftSize);
-        var window = Window.Hann(fftSize);
-        var frame = new float[fftSize];
-        var real = new float[fftSize];
-        var imag = new float[fftSize];
-
-        double geomSum = 0, arithSum = 0;
-        int bins = 0;
-        int hfStart = fftSize / 4;
-
-        for (int pos = 0; pos + fftSize <= reservoirMono.Length; pos += fftSize / 2)
-        {
-            for (int i = 0; i < fftSize; i++)
-                frame[i] = reservoirMono[pos + i] * window[i];
-            Array.Copy(frame, real, fftSize);
-            Array.Clear(imag, 0, fftSize);
-            fft.Direct(real, imag);
-
-            for (int i = hfStart; i < fftSize / 2; i++)
-            {
-                double mag = Math.Sqrt((double)real[i] * real[i] + (double)imag[i] * imag[i]);
-                double safe = Math.Max(mag, 1e-10);
-                geomSum += Math.Log(safe);
-                arithSum += safe;
-                bins++;
-            }
-        }
-
-        if (bins == 0 || arithSum <= 0) return (0.5, 0.5);
-        double flatness = Math.Exp(geomSum / bins) / (arithSum / bins);
-        return (flatness, flatness);
     }
 
     public int DetectHaasLag(float[] left, float[] right, int sampleRate)

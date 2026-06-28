@@ -5,11 +5,16 @@
         xmlns:models="clr-namespace:LosslessChecker.Models"
         xmlns:viewmodels="clr-namespace:LosslessChecker.ViewModels"
         Title="LosslessChecker — Анализ аутентичности аудио"
+        Icon="pack://application:,,,/Resources/app.ico"
         Height="900" Width="1400"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BgPrimaryBrush}"
         Foreground="{DynamicResource FgPrimaryBrush}"
-        FontFamily="Segoe UI"
+        FontFamily="Segoe UI Variable Display, Segoe UI"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="ClearType"
+        SnapsToDevicePixels="True"
+        UseLayoutRounding="True"
         AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop">
 
     <Window.Resources>
@@ -38,18 +43,29 @@
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
-            <Setter Property="Padding" Value="6,5"/>
+            <Setter Property="Padding" Value="8,6"/>
             <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontFamily" Value="Segoe UI Variable Display, Segoe UI"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource BgTertiaryBrush}"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <Style TargetType="DataGridCell">
             <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="Padding" Value="5,3"/>
+            <Setter Property="Padding" Value="8,4"/>
             <Setter Property="Foreground" Value="{DynamicResource FgPrimaryBrush}"/>
             <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Style.Triggers>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Foreground" Value="#0f0f1a"/>
+                    <Setter Property="Background" Value="{DynamicResource BgTertiaryBrush}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource FgPrimaryBrush}"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource BgSecondaryBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -58,12 +74,16 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{DynamicResource FgPrimaryBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="2,3"/>
+            <Setter Property="Padding" Value="4,4"/>
             <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
             <Style.Triggers>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
-                    <Setter Property="Foreground" Value="{DynamicResource BgPrimaryBrush}"/>
+                    <Setter Property="Background" Value="{DynamicResource BgTertiaryBrush}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource BgSecondaryBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -78,31 +98,25 @@
                                   ItemsSource="{Binding Tracks}">
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="{Binding AlbumName}" FontSize="12" Margin="8,0,4,0" VerticalAlignment="Center"/>
-                <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Text" Value="{Binding AverageQualityScore, StringFormat={}{0:F0}%}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource FgMutedBrush}"/>
-                            <Setter Property="FontSize" Value="10"/>
-                            <Setter Property="Margin" Value="4,0"/>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-                <Border CornerRadius="3" Padding="4,1" Margin="4,0,0,0" VerticalAlignment="Center">
+                <TextBlock FontSize="10" Foreground="{DynamicResource FgMutedBrush}" Margin="4,0"
+                           VerticalAlignment="Center"
+                           Text="{Binding AverageQualityScore, StringFormat={}{0:F0}%}"/>
+                <Border CornerRadius="3" Padding="4,1" Margin="4,0,0,0" VerticalAlignment="Center"
+                        Visibility="{Binding AlbumVerdict, Converter={StaticResource NullToVis}}">
                     <Border.Style>
                         <Style TargetType="Border">
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding AlbumVerdict}" Value="">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
                                 <DataTrigger Binding="{Binding AlbumVerdict}" Value="LOSSLESS">
-                                    <Setter Property="Background" Value="{DynamicResource LosslessGreenBrush}"/>
+                                    <Setter Property="Background" Value="{DynamicResource SignalGreenBrush}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding AlbumVerdict}" Value="HI-RES">
+                                    <Setter Property="Background" Value="{DynamicResource SignalGreenBrush}"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding AlbumVerdict}" Value="NOT SURE">
-                                    <Setter Property="Background" Value="{DynamicResource SuspiciousAmberBrush}"/>
+                                    <Setter Property="Background" Value="{DynamicResource SignalAmberBrush}"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding AlbumVerdict}" Value="REPLACE">
-                                    <Setter Property="Background" Value="{DynamicResource FakeRedBrush}"/>
+                                    <Setter Property="Background" Value="{DynamicResource SignalRedBrush}"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
@@ -129,7 +143,7 @@
             </Grid.RowDefinitions>
 
         <!-- Toolbar -->
-        <Border Grid.Row="0" Style="{StaticResource GlassCardStyle}" Padding="12" Margin="0,0,0,8">
+        <Border Grid.Row="0" Style="{StaticResource GlassCardStyle}" Padding="10" Margin="0,0,0,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -139,38 +153,53 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
+
+                <!-- Group 1: Input -->
                 <Button Grid.Column="0" Content="📁 Папка" Command="{Binding SelectFolderCommand}"
                         Style="{StaticResource PrimaryButtonStyle}"
-                        Width="100" Height="34" Margin="0,0,6,0"/>
+                        Width="90" Height="32" Margin="0,0,4,0"/>
                 <Button Grid.Column="1" Content="📂 Файлы" Command="{Binding SelectFilesCommand}"
                         Style="{StaticResource PrimaryButtonStyle}"
-                        Width="90" Height="34" Margin="0,0,6,0"/>
+                        Width="80" Height="32" Margin="0,0,4,0"/>
                 <Button Grid.Column="2" Content="⏹ Стоп" Command="{Binding StopCommand}"
                         Style="{StaticResource DangerButtonStyle}"
-                        Width="80" Height="34" Margin="0,0,6,0"/>
-                <Button Grid.Column="3" Content="➕ Добавить" Command="{Binding AddFilesCommand}"
+                        Width="70" Height="32" Margin="0,0,8,0"/>
+
+                <!-- Separator -->
+                <Border Grid.Column="3" Width="1" Background="{DynamicResource BorderBrush}"
+                        Margin="0,4,8,4" VerticalAlignment="Stretch"/>
+
+                <!-- Group 2: Actions -->
+                <Button Grid.Column="4" Content="➕ Добавить" Command="{Binding AddFilesCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
-                        Width="100" Height="34" Margin="0,0,6,0"/>
-                <Button Grid.Column="4" Content="🗑 Таблица" Command="{Binding ClearTableCommand}"
+                        Width="90" Height="32" Margin="0,0,4,0"/>
+                <Button Grid.Column="5" Content="🗑 Таблица" Command="{Binding ClearTableCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
-                        Width="100" Height="34" Margin="0,0,6,0"/>
-                <Button Grid.Column="5" Content="🧹 Кэш" Command="{Binding ClearCacheCommand}"
+                        Width="90" Height="32" Margin="0,0,4,0"/>
+                <Button Grid.Column="6" Content="🧹 Кэш" Command="{Binding ClearCacheCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
-                        Width="80" Height="34" Margin="0,0,6,0"/>
-                <Button Grid.Column="6" Content="📊 Экспорт" Command="{Binding ExportCommand}"
+                        Width="70" Height="32" Margin="0,0,4,0"/>
+                <Button Grid.Column="7" Content="🗑 Трек" Command="{Binding RemoveTrackCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
-                        Width="90" Height="34" Margin="0,0,6,0"/>
-                <Grid Grid.Column="7" Margin="20,0,0,0">
+                        Width="70" Height="32" Margin="0,0,4,0"/>
+                <Button Grid.Column="8" Content="📊 Экспорт" Command="{Binding ExportCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="80" Height="32" Margin="0,0,0,0"/>
+
+                <!-- Progress bar -->
+                <Grid Grid.Column="9" Margin="16,0,0,0" MinWidth="120">
                     <ProgressBar Value="{Binding Progress}" Minimum="0" Maximum="100"
-                                 Height="18" VerticalAlignment="Center"
-                                 Foreground="{DynamicResource LosslessGreenBrush}"
-                                 Background="{DynamicResource BgTertiaryBrush}"/>
+                                 Height="16" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource SignalGreenBrush}"
+                                 Background="{DynamicResource BgTertiaryBrush}"
+                                 BorderThickness="0"/>
                     <TextBlock Text="{Binding ProgressText}"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
-                               FontSize="11" FontWeight="Bold"
-                               Foreground="White"/>
+                               FontSize="10" FontWeight="Bold"
+                               Foreground="{DynamicResource FgPrimaryBrush}"/>
                 </Grid>
             </Grid>
         </Border>
@@ -178,11 +207,11 @@
         <!-- Main three-panel layout -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="220"/>
+                <ColumnDefinition Width="260"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="380"/>
+                <ColumnDefinition Width="440"/>
             </Grid.ColumnDefinitions>
 
             <!-- TreeView -->
@@ -192,10 +221,10 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <Border Grid.Row="0" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="10,10,0,0"
-                            Padding="10,6">
+                    <Border Grid.Row="0" Background="{DynamicResource BgSecondaryBrush}" CornerRadius="8,8,0,0"
+                            Padding="10,7" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                         <TextBlock Text="🔍 Коллекция" FontSize="12" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource FgMutedBrush}"/>
+                                   Foreground="{DynamicResource FgSecondaryBrush}"/>
                     </Border>
                     <TreeView Grid.Row="1" x:Name="GroupTreeView"
                               ItemsSource="{Binding ArtistGroups}"
@@ -203,10 +232,10 @@
                               BorderThickness="0" Padding="4,6"
                               SelectedItemChanged="TreeView_SelectedItemChanged">
                         <TreeView.Resources>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#4a9eff"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1e1e1e"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#4a9eff"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1e1e1e"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#2a2e3f"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#e8eaed"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#222639"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#9aa0b0"/>
                         </TreeView.Resources>
                     </TreeView>
                 </Grid>
@@ -223,11 +252,36 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
-                    <TextBox Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
-                             Width="180" Margin="0,0,8,0"
-                             Background="{DynamicResource BgSecondaryBrush}" Foreground="{DynamicResource FgPrimaryBrush}"
-                             BorderBrush="{DynamicResource BorderBrush}" FontSize="11"
-                             ToolTip="Поиск по названию, артисту, альбому"/>
+                    <Border Width="180" Height="28" CornerRadius="4"
+                            Background="{DynamicResource BgSecondaryBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                        <Grid>
+                            <TextBlock Text="🔍 Поиск..." FontSize="11"
+                                       Foreground="{DynamicResource FgSubtleBrush}"
+                                       IsHitTestVisible="False" Margin="6,0,0,0"
+                                       VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBox x:Name="SearchBox"
+                                     Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="Transparent" Foreground="{DynamicResource FgPrimaryBrush}"
+                                     BorderThickness="0" FontSize="11"
+                                     Padding="6,0,0,0" VerticalAlignment="Center"
+                                     ToolTip="Поиск по названию, артисту, альбому"/>
+                        </Grid>
+                    </Border>
                 </StackPanel>
 
                 <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="0">
@@ -238,25 +292,48 @@
                        RowBackground="{DynamicResource BgPrimaryBrush}" AlternatingRowBackground="{DynamicResource GridAltRowBrush}"
                        GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource BgSecondaryBrush}"
                       HeadersVisibility="Column" SelectionMode="Single"
-                      EnableRowVirtualization="True" EnableColumnVirtualization="True"
-                      ScrollViewer.CanContentScroll="True"
-                      CanUserSortColumns="True"
-                      Sorting="DataGrid_Sorting"
-                      SelectionChanged="DataGrid_SelectionChanged">
+                       EnableRowVirtualization="True"
+                       CanUserSortColumns="True"
+                       CanUserResizeColumns="True"
+                       Sorting="DataGrid_Sorting"
+                       SelectionChanged="DataGrid_SelectionChanged"
+                       PreviewKeyDown="DataGrid_PreviewKeyDown"
+                       PreviewMouseRightButtonDown="DataGrid_PreviewMouseRightButtonDown">
                 <DataGrid.Resources>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#4a6cf7"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#334155"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#e2e8f0"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#2a2e3f"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#e8eaed"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#222639"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#9aa0b0"/>
                 </DataGrid.Resources>
                 <DataGrid.ContextMenu>
                     <ContextMenu>
+                        <ContextMenu.Resources>
+                            <Style TargetType="MenuItem">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{DynamicResource FgPrimaryBrush}"/>
+                                <Setter Property="FontSize" Value="12"/>
+                            </Style>
+                            <Style TargetType="ContextMenu">
+                                <Setter Property="Background" Value="{DynamicResource BgSecondaryBrush}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                            </Style>
+                            <Style TargetType="Separator">
+                                <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
+                                <Setter Property="Height" Value="1"/>
+                                <Setter Property="Margin" Value="4,2"/>
+                            </Style>
+                        </ContextMenu.Resources>
                         <MenuItem Header="📂 Открыть папку с файлом"
                                   Command="{Binding OpenFolderCommand}"/>
                         <MenuItem Header="📋 Копировать метрики"
-                                  Command="{Binding SelectedFile.CopyMetricsCommand}"/>
+                                  Command="{Binding PlacementTarget.DataContext.CopyMetricsCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
                         <MenuItem Header="🔬 Показать спектрограмму"
                                   Command="{Binding OpenSpectrogramCommand}"/>
+                        <Separator/>
+                        <MenuItem Header="🗑 Удалить из таблицы"
+                                  Command="{Binding RemoveTrackCommand}"
+                                  InputGestureText="Del"/>
                     </ContextMenu>
                 </DataGrid.ContextMenu>
                 <DataGrid.Columns>
@@ -268,66 +345,55 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="Название" Binding="{Binding FileName}" Width="*" MaxWidth="300"
-                                        SortMemberPath="FileName" SortDirection="Ascending">
+                    <DataGridTextColumn Header="Название" Binding="{Binding FileName}" Width="250"
+                                         SortMemberPath="FileName" SortDirection="Ascending">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
+                    <DataGridTextColumn Header="Срез" Width="60" Binding="{Binding CutoffFrequency, StringFormat={}{0:F0}}"
+                                         SortMemberPath="CutoffFrequency"/>
                     <DataGridTemplateColumn Header="Длит." Width="55"
-                                            SortMemberPath="DurationSeconds">
+                                              SortMemberPath="DurationSeconds">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding DurationSeconds, Converter={StaticResource DurationFormat}}"
-                                           HorizontalAlignment="Right" FontFamily="Consolas" FontSize="11"
+                                           FontFamily="Consolas" FontSize="11"
                                            Foreground="{DynamicResource FgMutedBrush}"/>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="Формат" Binding="{Binding Format}" Width="60"
-                                        SortMemberPath="Format"/>
-                    <DataGridTextColumn Header="Битрейт" Width="65"
-                                        SortMemberPath="ActualBitrate">
+                    <DataGridTextColumn Header="Формат" Binding="{Binding Format}" Width="90"
+                                         SortMemberPath="Format"/>
+                    <DataGridTextColumn Header="Битрейт" Width="60"
+                                         SortMemberPath="ActualBitrate">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="FontFamily" Value="Consolas"/>
-                                <Setter Property="HorizontalAlignment" Value="Right"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                         <DataGridTextColumn.Binding>
-                            <Binding Path="ActualBitrate" StringFormat="{}{0}" FallbackValue="—"/>
+                            <Binding Path="DisplayBitrate" FallbackValue="—"/>
                         </DataGridTextColumn.Binding>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="Спектр" Width="65"
-                                        SortMemberPath="BitrateSpectrum">
+                    <DataGridTextColumn Header="Размер" Width="70"
+                                         SortMemberPath="FileSizeDisplay">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{Binding BitrateSpectrumColor}"/>
+                                <Setter Property="Foreground" Value="{Binding FileSizeColor}"/>
                                 <Setter Property="FontFamily" Value="Consolas"/>
-                                <Setter Property="FontWeight" Value="Bold"/>
-                                <Setter Property="HorizontalAlignment" Value="Right"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                         <DataGridTextColumn.Binding>
-                            <Binding Path="BitrateSpectrum" FallbackValue="—"/>
+                            <Binding Path="FileSizeDisplay" FallbackValue="—"/>
                         </DataGridTextColumn.Binding>
-                    </DataGridTextColumn>
-                    <DataGridTextColumn Header="МБ/мин" Binding="{Binding SizePerMinute}" Width="55"
-                                        SortMemberPath="SizePerMinute">
-                        <DataGridTextColumn.ElementStyle>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{Binding SizePerMinuteColor}"/>
-                                <Setter Property="FontFamily" Value="Consolas"/>
-                                <Setter Property="HorizontalAlignment" Value="Center"/>
-                            </Style>
-                        </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
                     <DataGridTextColumn Header="DR" Binding="{Binding DynamicRange, StringFormat={}{0:F0}}" Width="40"
-                                        SortMemberPath="DynamicRange"/>
+                                         SortMemberPath="DynamicRange"/>
                     <DataGridTextColumn Header="Кач-во" Binding="{Binding QualityScorePercent, StringFormat={}{0:F0}%}" Width="55"
-                                        SortMemberPath="QualityScorePercent">
+                                         SortMemberPath="QualityScorePercent">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Foreground" Value="{Binding QualityScorePercent, Converter={StaticResource ScoreToColor}}"/>
@@ -336,21 +402,28 @@
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="Заявлен" Binding="{Binding ClaimedType}" Width="70"
-                                        SortMemberPath="ClaimedType"/>
-                    <DataGridTextColumn Header="По анализу" Binding="{Binding DetectedType}" Width="120"
-                                        SortMemberPath="DetectedType">
+                    <DataGridTextColumn Header="По анализу" Binding="{Binding DetectedType}" Width="105"
+                                          SortMemberPath="DetectedType">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Foreground" Value="{Binding DetectedTypeColor}"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                    <DataGridTextColumn Header="Решение" Binding="{Binding VerdictLabel}" Width="75"
-                                         SortMemberPath="VerdictLabel">
+                    <DataGridTextColumn Header="Аутентичность" Binding="{Binding Authenticity}" Width="100"
+                                          SortMemberPath="Authenticity">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{Binding VerdictLabel, Converter={StaticResource DecToColor}}"/>
+                                <Setter Property="Foreground" Value="{Binding Authenticity, Converter={StaticResource AuthToColor}}"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Решение" Binding="{Binding Decision}" Width="80"
+                                          SortMemberPath="VerdictPriority">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{Binding Decision, Converter={StaticResource DecToColor}}"/>
                                 <Setter Property="FontWeight" Value="Bold"/>
                             </Style>
                         </DataGridTextColumn.ElementStyle>
@@ -368,99 +441,120 @@
                           Visibility="{Binding IsSpectrumVisible, Converter={StaticResource BoolToVis}}">
                 <StackPanel Margin="8">
 
-                    <Button Content="📋 Копировать таблицу"
+                    <Button Content="📋 Копировать метрики"
                             Command="{Binding SelectedFile.CopyMetricsCommand}"
                             Style="{StaticResource SecondaryButtonStyle}"
-                            Height="28" Margin="0,0,0,8"/>
+                            Height="30" Margin="0,0,0,8"/>
 
                     <!-- Album Summary -->
-                    <Border Style="{StaticResource CardStyle}" Padding="12,10" Margin="0,0,0,8"
+                    <Border Style="{StaticResource CardStyle}" Padding="0" Margin="0,0,0,8"
                             Visibility="{Binding SelectedGroup, Converter={StaticResource NullToVis}}"
                             Effect="{StaticResource ShadowE2}">
-                        <StackPanel>
-                            <TextBlock FontSize="14" FontWeight="Bold" Foreground="{DynamicResource FgPrimaryBrush}"
-                                       Text="{Binding SelectedGroup.AlbumName}" TextTrimming="CharacterEllipsis" Margin="0,0,0,6"/>
-                            <Border CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" Margin="0,0,0,8"
-                                    Background="{Binding SelectedGroup.AlbumVerdict, Converter={StaticResource DecToColor}}">
-                                <TextBlock FontSize="12" FontWeight="Bold" Foreground="{DynamicResource BgPrimaryBrush}"
-                                           Text="{Binding SelectedGroup.AlbumVerdict, StringFormat=ALBUM: {0}}"/>
-                            </Border>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Grid.Column="0" FontSize="11" Foreground="{DynamicResource FgMutedBrush}"
-                                           Text="{Binding SelectedGroup.AverageQualityScore, StringFormat=Ср. качество: {0:F0}%}"/>
-                                <TextBlock Grid.Row="0" Grid.Column="1" FontSize="11" Foreground="{DynamicResource FgMutedBrush}"
-                                           Text="{Binding SelectedGroup.AverageDynamicRange, StringFormat=Ср. DR: {0:F0}}"/>
-                                <TextBlock Grid.Row="1" Grid.Column="0" FontSize="11" Foreground="{DynamicResource LosslessGreenBrush}"
-                                           Text="{Binding SelectedGroup.KeepCount, StringFormat=KEEP: {0}}"/>
-                                <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Foreground="{DynamicResource SuspiciousAmberBrush}"
-                                           Text="{Binding SelectedGroup.InvestigateCount, StringFormat=INVESTIGATE: {0}}"/>
-                                <TextBlock Grid.Row="2" Grid.Column="0" FontSize="11" Foreground="{DynamicResource FakeRedBrush}"
-                                           Text="{Binding SelectedGroup.ReplaceCount, StringFormat=REPLACE: {0}}"/>
-                                <TextBlock Grid.Row="2" Grid.Column="1" FontSize="11" Foreground="{DynamicResource FgMutedBrush}"
-                                           Text="{Binding SelectedGroup.Tracks.Count, StringFormat=Треков: {0}}"/>
-                            </Grid>
-                        </StackPanel>
+                        <Grid>
+                            <Border Height="3" VerticalAlignment="Top"
+                                    CornerRadius="8,8,0,0"
+                                    Background="{Binding SelectedGroup.AlbumVerdict, Converter={StaticResource DecToColor}}"/>
+                            <StackPanel Margin="12,10,12,10">
+                                <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource FgPrimaryBrush}"
+                                           Text="{Binding SelectedGroup.AlbumName}" TextTrimming="CharacterEllipsis" Margin="0,0,0,8"/>
+                                <Border CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                        Background="{Binding SelectedGroup.AlbumVerdict, Converter={StaticResource DecToColor}}">
+                                    <TextBlock FontSize="11" FontWeight="Bold" Foreground="#0f1117"
+                                               Text="{Binding SelectedGroup.AlbumVerdict, StringFormat=ALBUM: {0}}"/>
+                                </Border>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" FontSize="10" Foreground="{DynamicResource FgMutedBrush}"
+                                               Text="{Binding SelectedGroup.AverageQualityScore, StringFormat=Качество: {0:F0}%}"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" FontSize="10" Foreground="{DynamicResource FgMutedBrush}"
+                                               Text="{Binding SelectedGroup.AverageDynamicRange, StringFormat=DR: {0:F0}}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" FontSize="10" Foreground="{DynamicResource SignalGreenBrush}"
+                                               FontWeight="SemiBold"
+                                               Text="{Binding SelectedGroup.KeepCount, StringFormat=KEEP: {0}}"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" FontSize="10" Foreground="{DynamicResource SignalAmberBrush}"
+                                               FontWeight="SemiBold"
+                                               Text="{Binding SelectedGroup.InvestigateCount, StringFormat=INVESTIGATE: {0}}"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="0" FontSize="10" Foreground="{DynamicResource SignalRedBrush}"
+                                               FontWeight="SemiBold"
+                                               Text="{Binding SelectedGroup.ReplaceCount, StringFormat=REPLACE: {0}}"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" FontSize="10" Foreground="{DynamicResource FgMutedBrush}"
+                                               Text="{Binding SelectedGroup.Tracks.Count, StringFormat=Треков: {0}}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Grid>
                     </Border>
 
                     <!-- Cover art -->
-                    <Border Style="{StaticResource CardStyle}" Height="200" Margin="0,0,0,8"
+                    <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8"
                             Visibility="{Binding SelectedFile, Converter={StaticResource NullToVis}}">
                         <Grid>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="*" MinHeight="140"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <Image Grid.Row="1" Stretch="Uniform" Margin="8"
+                            <Image Grid.Row="0" Stretch="Uniform" Margin="8"
                                    Source="{Binding SelectedFile.CoverData, Converter={StaticResource BytesToImage}}"
                                    Visibility="{Binding SelectedFile.CoverData, Converter={StaticResource NullToVis}}"/>
 
-                            <Border Grid.Row="1"
+                            <Border Grid.Row="0"
                                     Background="{DynamicResource BgSecondaryBrush}" CornerRadius="4" Margin="8"
                                     Visibility="{Binding SelectedFile.CoverData, Converter={StaticResource NullToVisInverse}}">
-                                <TextBlock Text="🎵" FontSize="48"
+                                <TextBlock Text="🎵" FontSize="40"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center"
                                            Foreground="{DynamicResource FgSubtleBrush}"/>
                             </Border>
 
-                            <StackPanel Grid.Row="2" Margin="8,4,8,8">
+                            <StackPanel Grid.Row="1" Margin="10,0,10,8">
                                 <TextBlock FontSize="12" FontWeight="SemiBold"
                                            Foreground="{DynamicResource FgPrimaryBrush}" TextTrimming="CharacterEllipsis"
-                                           Text="{Binding SelectedFile.Artist, FallbackValue=''}"/>
+                                           Text="{Binding SelectedFile.Artist, FallbackValue=''}"
+                                           Visibility="{Binding SelectedFile.Artist, Converter={StaticResource NullToVis}}"/>
                                 <TextBlock FontSize="11" Foreground="{DynamicResource FgSecondaryBrush}"
                                            TextTrimming="CharacterEllipsis"
-                                           Text="{Binding SelectedFile.Album, FallbackValue=''}"/>
+                                           Text="{Binding SelectedFile.Album, FallbackValue=''}"
+                                           Visibility="{Binding SelectedFile.Album, Converter={StaticResource NullToVis}}"/>
                                 <TextBlock FontSize="10" Foreground="{DynamicResource FgMutedBrush}"
-                                           Text="{Binding SelectedGroup.Genre, FallbackValue=''}"/>
+                                           Text="{Binding SelectedGroup.Genre, FallbackValue=''}"
+                                           Visibility="{Binding SelectedGroup.Genre, Converter={StaticResource NullToVis}}"/>
                             </StackPanel>
                         </Grid>
                     </Border>
 
                     <!-- Spectrogram (clickable) -->
-                    <Border Style="{StaticResource CardStyle}" Height="180" Margin="0,0,0,10"
+                    <Border Style="{StaticResource CardStyle}" Height="160" Margin="0,0,0,10"
                             Cursor="Hand" MouseLeftButtonDown="Spectrogram_Click">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Text="{Binding SpectrumTitle}"
-                                       Foreground="{DynamicResource FgMutedBrush}" FontSize="10"
-                                       TextTrimming="CharacterEllipsis" Margin="6,4"/>
+                            <Border Grid.Row="0" Background="{DynamicResource BgSecondaryBrush}"
+                                    Padding="8,4" CornerRadius="8,8,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding SpectrumTitle}"
+                                               Foreground="{DynamicResource FgSecondaryBrush}" FontSize="10"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="1" Text="🔍"
+                                               Foreground="{DynamicResource FgMutedBrush}" FontSize="10"/>
+                                </Grid>
+                            </Border>
                             <Image Grid.Row="1" Stretch="Uniform" Margin="2"
                                    Source="{Binding SelectedFile.SpectrogramBitmap}"/>
-                            <TextBlock Grid.Row="1" Text="🔍 Click to enlarge"
+                            <TextBlock Grid.Row="1" Text="Нажмите для увеличения"
                                        Foreground="{DynamicResource FgSubtleBrush}" FontSize="9"
                                        HorizontalAlignment="Right" VerticalAlignment="Bottom"
                                        Margin="0,0,6,4"/>
@@ -468,39 +562,67 @@
                     </Border>
 
                     <!-- Cutoff info bar -->
-                    <Border Background="{DynamicResource GridAltRowBrush}" CornerRadius="6" Padding="8,4" Margin="0,0,0,8">
+                    <Border Background="{DynamicResource CardBrush}" CornerRadius="6" Padding="10,6" Margin="0,0,0,8"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Foreground="{DynamicResource FakeRedBrush}" FontSize="11">
-                                <Run Text="Срез: "/>
-                                <Run Text="{Binding SelectedCutoffFrequency, StringFormat={}{0:F0}}" FontWeight="Bold"/>
-                                <Run Text=" Гц"/>
-                            </TextBlock>
-                            <TextBlock Foreground="{DynamicResource FgSubtleBrush}" FontSize="11" Margin="12,0,0,0">
-                                <Run Text="Nyquist: "/>
-                                <Run Text="{Binding SelectedNyquist, StringFormat={}{0:F0}}" FontWeight="Bold"/>
-                                <Run Text=" Гц"/>
-                            </TextBlock>
+                            <Border CornerRadius="3" Padding="5,2" Background="{DynamicResource SignalRedBgBrush}">
+                                <TextBlock Foreground="{DynamicResource SignalRedBrush}" FontSize="10" FontWeight="SemiBold">
+                                    <Run Text="Срез: "/>
+                                    <Run Text="{Binding SelectedCutoffFrequency, StringFormat={}{0:F0}}" FontWeight="Bold"/>
+                                    <Run Text=" Гц"/>
+                                </TextBlock>
+                            </Border>
+                            <Border CornerRadius="3" Padding="5,2" Background="{DynamicResource BgSecondaryBrush}" Margin="8,0,0,0">
+                                <TextBlock Foreground="{DynamicResource FgSecondaryBrush}" FontSize="10">
+                                    <Run Text="{Binding NyquistLabel}"/>
+                                    <Run Text="{Binding SelectedNyquist, StringFormat={}{0:F0}}" FontWeight="Bold"/>
+                                    <Run Text=" Гц"/>
+                                </TextBlock>
+                            </Border>
                         </StackPanel>
                     </Border>
 
                     <!-- Verdict bar -->
-                    <Border CornerRadius="8" Padding="10,8" Margin="0,0,0,8"
-                            Background="{Binding SelectedFile.VerdictLabel, Converter={StaticResource DecToColor}}"
+                    <Border CornerRadius="8" Padding="0" Margin="0,0,0,8"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                             Effect="{StaticResource ShadowE1}">
-                        <StackPanel>
-                            <TextBlock FontSize="16" FontWeight="Bold" Margin="0,0,0,4"
-                                       Foreground="#0f0f1a">
-                                <Run Text="{Binding SelectedFile.VerdictDisplayText, Mode=OneWay}"/>
-                            </TextBlock>
-                            <TextBlock FontSize="11" Foreground="{DynamicResource FgMutedBrush}">
-                                <Run Text="Подлинность: "/>
-                                <Run Text="{Binding SelectedFile.Authenticity}" FontWeight="Bold"
-                                     Foreground="{Binding SelectedFile.Authenticity, Converter={StaticResource AuthToColor}}"/>
-                                <Run Text=" | Качество: "/>
-                                <Run Text="{Binding SelectedFile.QualityScorePercent, StringFormat={}{0:F0}%}" FontWeight="Bold"
-                                      Foreground="{Binding SelectedFile.QualityScorePercent, Converter={StaticResource ScoreToColor}}"/>
-                            </TextBlock>
-                        </StackPanel>
+                        <Grid>
+                            <!-- Colored top border strip -->
+                            <Border Height="4" VerticalAlignment="Top"
+                                    CornerRadius="8,8,0,0"
+                                    Background="{Binding SelectedFile.VerdictLabel, Converter={StaticResource DecToColor}}"/>
+                            <StackPanel Margin="12,10,12,10">
+                                <TextBlock FontSize="15" FontWeight="Bold" Margin="0,0,0,4"
+                                           Foreground="{DynamicResource FgPrimaryBrush}">
+                                    <Run Text="{Binding SelectedFile.VerdictDisplayText, Mode=OneWay}"/>
+                                </TextBlock>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" CornerRadius="4" Padding="6,2"
+                                            Background="{Binding SelectedFile.Authenticity, Converter={StaticResource AuthToColor}}">
+                                        <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="#0f1117">
+                                            <Run Text="{Binding SelectedFile.Authenticity}"/>
+                                        </TextBlock>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" FontSize="10" Foreground="{DynamicResource FgMutedBrush}"
+                                               Margin="8,0,0,0" VerticalAlignment="Center">
+                                        <Run Text="Качество: "/>
+                                        <Run Text="{Binding SelectedFile.QualityScorePercent, StringFormat={}{0:F0}%}" FontWeight="Bold"
+                                             Foreground="{Binding SelectedFile.QualityScorePercent, Converter={StaticResource ScoreToColor}}"/>
+                                    </TextBlock>
+                                    <TextBlock Grid.Column="2" FontSize="10" Foreground="{DynamicResource FgMutedBrush}"
+                                               Margin="8,0,0,0" VerticalAlignment="Center">
+                                        <Run Text="DR: "/>
+                                        <Run Text="{Binding SelectedFile.DynamicRange, StringFormat={}{0:F0}}" FontWeight="Bold"
+                                             Foreground="{DynamicResource FgPrimaryBrush}"/>
+                                    </TextBlock>
+                                </Grid>
+                            </StackPanel>
+                        </Grid>
                     </Border>
 
                     <!-- Metrics table -->
@@ -508,36 +630,51 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Grid>
-                                    <TextBlock Text="{Binding Name}"
-                                               Visibility="{Binding IsHeader, Converter={StaticResource BoolToVis}}"
-                                               Foreground="{DynamicResource AccentBrush}" FontSize="12" FontWeight="Bold"
-                                               Margin="0,10,0,4" TextDecorations="Underline"/>
+                                    <!-- Header -->
+                                    <Border Visibility="{Binding IsHeader, Converter={StaticResource BoolToVis}}"
+                                            Background="{DynamicResource BgSecondaryBrush}"
+                                            CornerRadius="4" Padding="8,5" Margin="0,10,0,4">
+                                        <TextBlock Text="{Binding Name}"
+                                                   Foreground="{DynamicResource AccentBrush}" FontSize="12" FontWeight="Bold"/>
+                                    </Border>
 
+                                    <!-- Metric row -->
                                     <Border Visibility="{Binding IsHeader, Converter={StaticResource InvertBool}}"
-                                            Background="{DynamicResource BgSecondaryBrush}" CornerRadius="6" Padding="8,5" Margin="0,1">
+                                            Background="{DynamicResource CardBrush}"
+                                            CornerRadius="6" Padding="0" Margin="0,2"
+                                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                                         <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
-                                                <TextBlock Text="{Binding Name}" FontSize="10.5"
-                                                           Foreground="{DynamicResource FgSecondaryBrush}" ToolTip="{Binding Description}"/>
-                                                <TextBlock Text="{Binding Typical}" FontSize="9"
-                                                           Foreground="{DynamicResource FgSubtleBrush}" FontStyle="Italic"
-                                                           Margin="0,2,0,0" ToolTip="{Binding Description}"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal"
-                                                        VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Value}" FontSize="10.5"
-                                                           FontFamily="Consolas" Foreground="{DynamicResource FgPrimaryBrush}"
-                                                           FontWeight="SemiBold" Margin="0,0,10,0"/>
-                                                <Border CornerRadius="3" Padding="6,2"
-                                                        Background="{Binding StatusColor}">
-                                                    <TextBlock Text="{Binding Status}" FontSize="9.5"
-                                                               Foreground="{DynamicResource BgPrimaryBrush}" FontWeight="SemiBold"/>
-                                                </Border>
-                                            </StackPanel>
+                                            <!-- Color accent bar on the left -->
+                                            <Border Width="3" HorizontalAlignment="Left"
+                                                    Background="{Binding StatusColor}"
+                                                    CornerRadius="6,0,0,6"/>
+                                            <Grid Margin="10,6,8,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="{Binding Name}" FontSize="11"
+                                                               Foreground="{DynamicResource FgPrimaryBrush}"
+                                                               ToolTip="{Binding Description}"/>
+                                                    <TextBlock Text="{Binding Typical}" FontSize="9"
+                                                               Foreground="{DynamicResource FgSubtleBrush}" FontStyle="Italic"
+                                                               Margin="0,2,0,0" ToolTip="{Binding Description}"
+                                                               TextWrapping="NoWrap"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                            VerticalAlignment="Center" Margin="8,0,0,0">
+                                                    <TextBlock Text="{Binding Value}" FontSize="11"
+                                                               FontFamily="Cascadia Code, Consolas"
+                                                               Foreground="{DynamicResource FgPrimaryBrush}"
+                                                               FontWeight="SemiBold" Margin="0,0,8,0"/>
+                                                    <Border CornerRadius="3" Padding="6,2"
+                                                            Background="{Binding StatusColor}">
+                                                        <TextBlock Text="{Binding Status}" FontSize="9.5"
+                                                                   Foreground="#0f1117" FontWeight="SemiBold"/>
+                                                    </Border>
+                                                </StackPanel>
+                                            </Grid>
                                         </Grid>
                                     </Border>
                                 </Grid>
@@ -552,9 +689,12 @@
         <!-- Summary bar -->
         <Border Grid.Row="2" Style="{StaticResource GlassCardStyle}" Padding="12,8" Margin="0,6,0,0">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding SummaryText}" Foreground="{DynamicResource FgMutedBrush}" FontSize="13"
+                <Rectangle Width="3" Height="16" Fill="{DynamicResource AccentBrush}" RadiusX="1.5" RadiusY="1.5"
+                           VerticalAlignment="Center" Margin="0,0,8,0"
+                           Visibility="{Binding CurrentlyProcessing, Converter={StaticResource NullToVis}}"/>
+                <TextBlock Text="{Binding SummaryText}" Foreground="{DynamicResource FgMutedBrush}" FontSize="12"
                            Visibility="{Binding CurrentlyProcessing, Converter={StaticResource NullToVisInverse}}"/>
-                <TextBlock Text="{Binding CurrentlyProcessing}" Foreground="{DynamicResource AccentBrush}" FontSize="13"
+                <TextBlock Text="{Binding CurrentlyProcessing}" Foreground="{DynamicResource AccentBrush}" FontSize="12"
                            FontWeight="SemiBold"
                            Visibility="{Binding CurrentlyProcessing, Converter={StaticResource NullToVis}}"/>
             </StackPanel>
@@ -564,21 +704,64 @@
 
         <Border x:Name="WelcomeContent" Visibility="{Binding ShowWelcome, Converter={StaticResource BoolToVis}}"
                 Background="{DynamicResource BgPrimaryBrush}">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <TextBlock Text="🎵" FontSize="64" HorizontalAlignment="Center" Foreground="{DynamicResource FgSubtleBrush}"/>
-                <TextBlock Text="Перетащите папку с аудио сюда" FontSize="18" Foreground="{DynamicResource FgMutedBrush}"
-                           HorizontalAlignment="Center" Margin="0,12"/>
-                <Button Content="📁 Выбрать папку" Command="{Binding SelectFolderCommand}"
-                        Style="{StaticResource PrimaryButtonStyle}"
-                        Width="160" Height="38" Margin="0,16"/>
-                <TextBlock Text="или перетащите файлы для быстрого анализа" FontSize="12" Foreground="{DynamicResource FgSubtleBrush}"
-                           HorizontalAlignment="Center"/>
-                <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="2" CornerRadius="12"
-                        Margin="40,20" Padding="20">
-                    <TextBlock Text=".mp3  .flac  .wav  .m4a  .alac"
-                               Foreground="{DynamicResource FgSubtleBrush}" FontSize="11" HorizontalAlignment="Center"/>
-                </Border>
-            </StackPanel>
+            <Grid>
+                <!-- Decorative accent bar at top -->
+                <Border Height="3" VerticalAlignment="Top" Background="{DynamicResource AccentBrush}" Opacity="0.6"/>
+
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,0,0,60">
+                    <!-- Icon with glow -->
+                    <Border Width="80" Height="80" CornerRadius="40"
+                            Background="{DynamicResource BgSecondaryBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                            Effect="{StaticResource ShadowE2}"
+                            Margin="0,0,0,16">
+                        <TextBlock Text="🎵" FontSize="36" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+
+                    <TextBlock Text="LosslessChecker" FontSize="24" FontWeight="Bold"
+                               Foreground="{DynamicResource FgPrimaryBrush}"
+                               HorizontalAlignment="Center" Margin="0,0,0,4"
+                               FontFamily="Segoe UI Variable Display, Segoe UI"/>
+                    <TextBlock Text="Проверка аутентичности аудиофайлов" FontSize="13"
+                               Foreground="{DynamicResource FgMutedBrush}"
+                               HorizontalAlignment="Center" Margin="0,0,0,20"/>
+
+                    <TextBlock Text="Перетащите папку с аудио сюда" FontSize="15"
+                               Foreground="{DynamicResource FgSecondaryBrush}"
+                               HorizontalAlignment="Center" Margin="0,0,0,18"/>
+
+                    <Button Content="📁 Выбрать папку" Command="{Binding SelectFolderCommand}"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Width="170" Height="38" Margin="0,0,0,12"/>
+
+                    <TextBlock Text="или перетащите отдельные файлы для быстрого анализа"
+                               FontSize="11" Foreground="{DynamicResource FgSubtleBrush}"
+                               HorizontalAlignment="Center" Margin="0,0,0,20"/>
+
+                    <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8"
+                            Margin="0,0,0,0" Padding="16,10"
+                            Background="{DynamicResource CardBrush}">
+                        <StackPanel Orientation="Horizontal">
+                            <Border CornerRadius="3" Padding="6,2" Background="{DynamicResource BgSecondaryBrush}" Margin="0,0,4,0">
+                                <TextBlock Text=".flac" Foreground="{DynamicResource FgSecondaryBrush}" FontSize="10" FontWeight="SemiBold"/>
+                            </Border>
+                            <Border CornerRadius="3" Padding="6,2" Background="{DynamicResource BgSecondaryBrush}" Margin="0,0,4,0">
+                                <TextBlock Text=".wav" Foreground="{DynamicResource FgSecondaryBrush}" FontSize="10" FontWeight="SemiBold"/>
+                            </Border>
+                            <Border CornerRadius="3" Padding="6,2" Background="{DynamicResource BgSecondaryBrush}" Margin="0,0,4,0">
+                                <TextBlock Text=".mp3" Foreground="{DynamicResource FgSecondaryBrush}" FontSize="10" FontWeight="SemiBold"/>
+                            </Border>
+                            <Border CornerRadius="3" Padding="6,2" Background="{DynamicResource BgSecondaryBrush}" Margin="0,0,4,0">
+                                <TextBlock Text=".m4a" Foreground="{DynamicResource FgSecondaryBrush}" FontSize="10" FontWeight="SemiBold"/>
+                            </Border>
+                            <Border CornerRadius="3" Padding="6,2" Background="{DynamicResource BgSecondaryBrush}">
+                                <TextBlock Text=".alac" Foreground="{DynamicResource FgSecondaryBrush}" FontSize="10" FontWeight="SemiBold"/>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </Window>

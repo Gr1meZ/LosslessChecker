@@ -50,6 +50,28 @@ public partial class MainWindow : Window
         _viewModel.OpenSpectrogramCommand.Execute(null);
     }
 
+    private void DataGrid_PreviewMouseRightButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.DataGrid grid)
+        {
+            var hit = grid.InputHitTest(e.GetPosition(grid));
+            var row = FindVisualParent<System.Windows.Controls.DataGridRow>(hit as System.Windows.DependencyObject);
+            if (row != null)
+            {
+                grid.SelectedItem = row.DataContext;
+            }
+        }
+    }
+
+    private void DataGrid_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Delete)
+        {
+            _viewModel.RemoveTrackCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
     private void Window_DragOver(object sender, System.Windows.DragEventArgs e)
     {
         e.Effects = System.Windows.DragDropEffects.Link;
@@ -63,5 +85,16 @@ public partial class MainWindow : Window
             var files = (string[])e.Data.GetData(System.Windows.DataFormats.FileDrop);
             await _viewModel.ScanAndAppend(files);
         }
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
+    {
+        while (child != null)
+        {
+            if (child is T t)
+                return t;
+            child = System.Windows.Media.VisualTreeHelper.GetParent(child);
+        }
+        return null;
     }
 }

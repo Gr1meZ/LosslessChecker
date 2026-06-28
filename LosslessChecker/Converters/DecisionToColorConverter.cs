@@ -9,9 +9,9 @@ public class DecisionToColorConverter : IValueConverter
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         string key = value is string s
-            ? s == "LOSSLESS" || s == "HI-RES" ? "LosslessGreenBrush"
-            : s == "NOT SURE" ? "SuspiciousAmberBrush"
-            : s == "REPLACE" || s.StartsWith("MP3", System.StringComparison.OrdinalIgnoreCase) || s.StartsWith("AAC", System.StringComparison.OrdinalIgnoreCase) ? "FakeRedBrush"
+            ? s == "LOSSLESS" || s == "HI-RES" ? "SignalGreenBrush"
+            : s == "NOT SURE" ? "SignalAmberBrush"
+            : s == "REPLACE" || s.StartsWith("MP3", System.StringComparison.OrdinalIgnoreCase) || s.StartsWith("AAC", System.StringComparison.OrdinalIgnoreCase) ? "SignalRedBrush"
             : "NeutralGrayBrush"
             : "NeutralGrayBrush";
         return System.Windows.Application.Current.TryFindResource(key) ?? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Gray);

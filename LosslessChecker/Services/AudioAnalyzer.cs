@@ -15,7 +15,7 @@ public class AudioAnalyzer
 
         var result = _pipeline.Analyze(fileInfo, ct);
         if (fileInfo2.Exists && result.AnalysisStatus == AnalysisStatus.Completed)
-            _cache.Store(fileInfo.FilePath, fileInfo2.Length, fileInfo2.LastWriteTime, result);
+            _cache.Store(fileInfo.FilePath, fileInfo2.Length, fileInfo2.LastWriteTime, result with { SpectrogramDb = null, CoverData = null });
 
         return result;
     }

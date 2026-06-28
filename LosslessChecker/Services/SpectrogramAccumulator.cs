@@ -24,8 +24,6 @@ public class SpectrogramAccumulator
     private bool _durationKnown;
     private int _sampleRate;
 
-    private double _globalMaxMag = 1e-10;
-
     public void Init(int sampleRate, double? totalDuration)
     {
         _sampleRate = sampleRate;
@@ -48,7 +46,6 @@ public class SpectrogramAccumulator
         _columnCounts = new int[_currentMaxCols];
         _colIndex = 0;
         _accumulatedTime = 0;
-        _globalMaxMag = 1e-10;
     }
 
     public void AddChunk(AudioChunk chunk)
@@ -109,12 +106,10 @@ public class SpectrogramAccumulator
                     (double)real[bin1] * real[bin1] + (double)imag[bin1] * imag[bin1]);
                 double interpMag = mag + (mag1 - mag) * frac;
 
-                if (_columns[col][j] < interpMag)
-                    _columns[col][j] = (float)interpMag;
+                _columns[col][j] += (float)interpMag;
             }
 
             _columnCounts[col]++;
-            _globalMaxMag = Math.Max(_globalMaxMag, _columns[col].Max());
         }
 
         _accumulatedTime += chunkDuration;
@@ -128,13 +123,27 @@ public class SpectrogramAccumulator
         if (actualCols == 0) actualCols = 1;
 
         var dbValues = new float[actualCols * FreqBins];
-        double refMag = Math.Max(_globalMaxMag, 1e-10);
+
+        var perBandMaxMag = new double[FreqBins];
+
+        for (int x = 0; x < actualCols; x++)
+        {
+            if (_columns[x] == null || _columnCounts[x] == 0) continue;
+            double invCount = 1.0 / _columnCounts[x];
+            for (int y = 0; y < FreqBins; y++)
+            {
+                double avg = _columns[x][y] * invCount;
+                _columns[x][y] = (float)avg;
+                if (avg > perBandMaxMag[y]) perBandMaxMag[y] = avg;
+            }
+        }
 
         for (int x = 0; x < actualCols; x++)
         {
             if (_columns[x] == null) continue;
             for (int y = 0; y < FreqBins; y++)
             {
+                double refMag = Math.Max(perBandMaxMag[y], 1e-10);
                 double db = 20.0 * Math.Log10(Math.Max(_columns[x][y], 1e-10) / refMag);
                 dbValues[x * FreqBins + y] = (float)Math.Clamp((db - DbFloor) / (-DbFloor), 0, 1);
             }
@@ -160,7 +169,7 @@ public class SpectrogramAccumulator
                 if (_columns[src0] != null && _columns[src1] != null)
                 {
                     for (int j = 0; j < FreqBins; j++)
-                        newCols[i][j] = Math.Max(_columns[src0][j], _columns[src1][j]);
+                        newCols[i][j] = _columns[src0][j] + _columns[src1][j];
                     newCounts[i] = _columnCounts[src0] + _columnCounts[src1];
                 }
                 else if (_columns[src0] != null)

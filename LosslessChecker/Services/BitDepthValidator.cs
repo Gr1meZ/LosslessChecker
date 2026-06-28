@@ -9,7 +9,7 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
     private const double HistoDbMin = -144.0;
     private const double HistoDbStep = 0.1;
     private const int HistoBins = 1440;
-    private const double SafetyGateDb = -40.0;
+    private const double SafetyGateDb = -75.0;
     private const double CumulativeThreshold = 0.01;
 
     private readonly int[] _rmsHistogram = new int[HistoBins];
@@ -44,7 +44,7 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
 
             if ((i & 0xF) == 0)
             {
-                int sample24 = (int)(s * 8388607.0 + 0.5 * Math.Sign(s));
+                int sample24 = (int)(s * 8388608.0 + 0.5 * Math.Sign(s));
                 int lsb = sample24 & 0xFF;
                 if (lsb == 0) _lsbZeroCount++;
                 if (_lsbConstantMap.ContainsKey(lsb)) _lsbConstantMap[lsb]++;
@@ -139,50 +139,7 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
     {
         if (claimedBitDepth != 24 || samples.Length < 1000) return false;
         int blockSize = Math.Max(100, samples.Length / 100);
-        var sortedBlocks = new List<double>();
-        for (int pos = 0; pos + blockSize <= samples.Length; pos += blockSize)
-        {
-            double maxAbs = 0;
-            for (int i = pos; i < pos + blockSize; i++)
-                maxAbs = Math.Max(maxAbs, Math.Abs(samples[i]));
-            sortedBlocks.Add(maxAbs);
-        }
-        sortedBlocks.Sort((a, b) => b.CompareTo(a));
-        int loudCount = Math.Max(1, sortedBlocks.Count / 10);
-        double loudThreshold = sortedBlocks[Math.Min(loudCount - 1, sortedBlocks.Count - 1)];
-
-        int zeroCount = 0, totalCount = 0;
-        var constantValues = new Dictionary<int, int>();
-        for (int pos = 0; pos + blockSize <= samples.Length; pos += blockSize)
-        {
-            double maxAbs = 0;
-            for (int i = pos; i < pos + blockSize; i++)
-                maxAbs = Math.Max(maxAbs, Math.Abs(samples[i]));
-            if (maxAbs < loudThreshold) continue;
-            for (int i = pos; i < pos + blockSize; i++)
-            {
-                int sample24 = (int)(samples[i] * 8388607.0 + 0.5 * Math.Sign(samples[i]));
-                int lsb = sample24 & 0xFF;
-                if (lsb == 0) zeroCount++;
-                if (constantValues.ContainsKey(lsb)) constantValues[lsb]++;
-                else constantValues[lsb] = 1;
-                totalCount++;
-            }
-        }
-
-        if (totalCount < 100) return false;
-
-        // 95% zero LSBs => zero-padded
-        if ((double)zeroCount / totalCount > 0.95) return true;
-
-        // 95% same non-zero LSB value => constant dither / naive upscale
-        foreach (var kv in constantValues)
-        {
-            if (kv.Key != 0 && (double)kv.Value / totalCount > 0.95)
-                return true;
-        }
-
-        return false;
+        return AnalyzeChannelLsb(samples, samples.Length, blockSize);
     }
 
     public BitDepthResult ValidateStereo(StereoBuffer buffer, int claimedBitDepth)
@@ -223,6 +180,9 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
     }
 
     private static bool CheckLsbZeroPaddedChannel(float[] channel, int n, int blockSize)
+        => AnalyzeChannelLsb(channel, n, blockSize);
+
+    private static bool AnalyzeChannelLsb(float[] channel, int n, int blockSize)
     {
         var sortedBlocks = new List<double>();
         for (int pos = 0; pos + blockSize <= n; pos += blockSize)
@@ -246,7 +206,7 @@ public class BitDepthValidator : IChunkAccumulator<BitDepthResult>
             if (maxAbs < loudThreshold) continue;
             for (int i = pos; i < pos + blockSize; i++)
             {
-                int sample24 = (int)(channel[i] * 8388607.0 + 0.5 * Math.Sign(channel[i]));
+                int sample24 = (int)(channel[i] * 8388608.0 + 0.5 * Math.Sign(channel[i]));
                 int lsb = sample24 & 0xFF;
                 if (lsb == 0) zeroCount++;
                 if (constantValues.ContainsKey(lsb)) constantValues[lsb]++;

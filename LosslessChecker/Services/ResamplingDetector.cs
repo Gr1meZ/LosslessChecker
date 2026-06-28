@@ -32,7 +32,7 @@ public class ResamplingDetector
             prevDb = db;
         }
 
-        bool hasAliasing = aliasHits > bins / 40;
+        bool hasAliasing = aliasHits > bins / 80;
 
         // Ringing: periodic Gibbs-like oscillations in HF
         int ringHits = 0;

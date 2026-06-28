@@ -66,9 +66,8 @@ public sealed class CUEToolsHasher : IAudioHasher
         if (sampleRate != 44100)
             return new AudioHashResult(Algorithm, "N/A", trackNumber, 0);
 
-        using var sha256 = SHA256.Create();
+        using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var chunk = new byte[4096];
-        using var ms = new MemoryStream();
 
         for (int pos = 0; pos < samples.Length; pos += 2048)
         {
@@ -81,10 +80,10 @@ public sealed class CUEToolsHasher : IAudioHasher
                 chunk[bytesWritten++] = (byte)(val & 0xFF);
                 chunk[bytesWritten++] = (byte)((val >> 8) & 0xFF);
             }
-            ms.Write(chunk, 0, bytesWritten);
+            sha256.AppendData(chunk, 0, bytesWritten);
         }
 
-        var hash = sha256.ComputeHash(ms.ToArray());
+        var hash = sha256.GetHashAndReset();
         return new AudioHashResult(Algorithm, PcmHasher.ToHexString(hash), trackNumber, 0, hash);
     }
 }

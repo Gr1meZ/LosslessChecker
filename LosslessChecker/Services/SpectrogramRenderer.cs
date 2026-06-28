@@ -41,9 +41,9 @@ public class SpectrogramRenderer
 
                     int py = dataHeight - 1 - y;
                     int idx = (py * dataWidth + x) * 4;
-                    span[idx] = (byte)(color & 0xFF);
+                    span[idx] = (byte)((color >> 16) & 0xFF);
                     span[idx + 1] = (byte)((color >> 8) & 0xFF);
-                    span[idx + 2] = (byte)((color >> 16) & 0xFF);
+                    span[idx + 2] = (byte)(color & 0xFF);
                     span[idx + 3] = 0xFF;
                 }
             }
@@ -52,6 +52,7 @@ public class SpectrogramRenderer
             Marshal.Copy(pixels, 0, bmp.BackBuffer, dataWidth * dataHeight * 4);
             bmp.AddDirtyRect(new Int32Rect(0, 0, dataWidth, dataHeight));
             bmp.Unlock();
+            bmp.Freeze();
             return bmp;
         }
         finally
@@ -107,9 +108,9 @@ public class SpectrogramRenderer
                     int lutIdx = Math.Clamp((int)(t * 255), 0, 255);
                     int idx = ((outHeight - 1 - oy) * outWidth + ox) * 4;
                     uint color = ColormapLut[lutIdx];
-                    span[idx] = (byte)(color & 0xFF);
+                    span[idx] = (byte)((color >> 16) & 0xFF);
                     span[idx + 1] = (byte)((color >> 8) & 0xFF);
-                    span[idx + 2] = (byte)((color >> 16) & 0xFF);
+                    span[idx + 2] = (byte)(color & 0xFF);
                     span[idx + 3] = 0xFF;
                 }
             }
@@ -118,6 +119,7 @@ public class SpectrogramRenderer
             Marshal.Copy(pixels, 0, bmp.BackBuffer, outWidth * outHeight * 4);
             bmp.AddDirtyRect(new Int32Rect(0, 0, outWidth, outHeight));
             bmp.Unlock();
+            bmp.Freeze();
             return bmp;
         }
         finally
@@ -141,10 +143,14 @@ public class SpectrogramRenderer
     private static (byte r, byte g, byte b) HotColormap(double t)
     {
         if (t <= 0) return (0, 0, 0);
-        if (t < 0.25) { double s = t / 0.25; return ((byte)(255 * s), 0, 0); }
-        if (t < 0.5) { double s = (t - 0.25) / 0.25; return (255, (byte)(255 * s), 0); }
-        if (t < 0.85) { double s = (t - 0.5) / 0.35; return (255, (byte)(128 + 127 * s), (byte)(255 * s)); }
-        double s2 = (t - 0.85) / 0.15;
-        return (255, 255, (byte)(128 + 127 * s2));
+        if (t < 1.0/8.0) { double s = t * 8; return ((byte)(0), (byte)(0), (byte)(25 + 110 * s)); }
+        if (t < 2.0/8.0) { double s = (t - 1.0/8.0) * 8; return ((byte)(40 * s), (byte)(0), (byte)(135 + 65 * s)); }
+        if (t < 3.0/8.0) { double s = (t - 2.0/8.0) * 8; return ((byte)(40 + 70 * s), (byte)(0), (byte)(200)); }
+        if (t < 4.0/8.0) { double s = (t - 3.0/8.0) * 8; return ((byte)(110 + 120 * s), (byte)(40 * s), (byte)(200 - 20 * s)); }
+        if (t < 5.0/8.0) { double s = (t - 4.0/8.0) * 8; return ((byte)(230 + 25 * s), (byte)(40 + 20 * s), (byte)(180 * (1 - s))); }
+        if (t < 6.0/8.0) { double s = (t - 5.0/8.0) * 8; return ((byte)(255), (byte)(60 + 70 * s), (byte)(0)); }
+        if (t < 7.0/8.0) { double s = (t - 6.0/8.0) * 8; return ((byte)(255), (byte)(130 + 125 * s), (byte)(0)); }
+        double s2 = (t - 7.0/8.0) * 8;
+        return ((byte)(255), (byte)(255), (byte)(180 * s2));
     }
 }

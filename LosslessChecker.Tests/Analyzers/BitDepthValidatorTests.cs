@@ -62,9 +62,9 @@ public class BitDepthValidatorTests
             double signal = Math.Sin(2 * Math.PI * 1000 * i / 44100);
             double u1 = rng.NextDouble() * 2 - 1;
             double u2 = rng.NextDouble() * 2 - 1;
-            double tpdf = (u1 + u2) * (1.0 / 8388607.0);
-            int sample24 = (int)Math.Round((signal + tpdf) * 8388607.0);
-            samples[i] = (float)(sample24 / 8388607.0);
+            double tpdf = (u1 + u2) * (1.0 / 8388608.0);
+            int sample24 = (int)Math.Round((signal + tpdf) * 8388608.0);
+            samples[i] = (float)(sample24 / 8388608.0);
         }
         var validator = new BitDepthValidator();
         bool lsbZero = validator.CheckLsbZeroPadded(samples, 24);

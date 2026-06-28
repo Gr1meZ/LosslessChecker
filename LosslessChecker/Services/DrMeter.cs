@@ -31,10 +31,12 @@ public class DrMeter : IChunkAccumulator<DrResult>
         _globalPeak = 0; _clippedRuns = 0; _consecutive = 0;
         _totalSamples = 0;
         _sumSqL = _sumSqR = _maxAbsL = _maxAbsR = 0; _samplesInBlock = 0;
+        _isStereo = false;
     }
 
     public void AddChunk(ReadOnlySpan<float> mono)
     {
+        _isStereo = false;
         for (int i = 0; i < mono.Length; i++)
         {
             float s = mono[i];
@@ -50,6 +52,7 @@ public class DrMeter : IChunkAccumulator<DrResult>
 
     public void AddChunk(ReadOnlySpan<float> left, ReadOnlySpan<float> right)
     {
+        _isStereo = true;
         int n = Math.Min(left.Length, right.Length);
         for (int i = 0; i < n; i++)
         {
@@ -69,7 +72,7 @@ public class DrMeter : IChunkAccumulator<DrResult>
             if (++_samplesInBlock >= _blockSize) FlushBlock();
         }
 
-        if (left.Length > n) AddChunk(left[n..]);
+        if (left.Length > n) AddChunkLeft(left[n..]);
     }
 
     private void AddChunkLeft(ReadOnlySpan<float> mono)

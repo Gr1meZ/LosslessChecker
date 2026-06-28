@@ -82,12 +82,12 @@ public record AnalysisResult
     public double QualityScorePercent { get; init; }
     public double MetricsCoverage { get; init; }
     public string Decision { get; init; } = "";
-    public string Verdict { get; init; } = "";
     public string StructuredReport { get; init; } = "";
 
     public int Mp3Bitrate { get; init; }
     public string Mp3Encoder { get; init; } = "";
     public double Mp3QualityScore { get; init; }
+    public double AacQualityScore { get; init; }
 
     public int AacBitrate { get; init; }
     public bool IsAac { get; init; }

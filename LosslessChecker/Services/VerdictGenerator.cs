@@ -9,14 +9,17 @@ public class VerdictGenerator
     {
         var sb = new StringBuilder();
         var nyquist = r.SampleRate / 2.0;
-        double ratio = nyquist > 0 ? r.CutoffFrequency / nyquist : 1.0;
+        bool isLossy = r.Mp3Bitrate > 0 || r.AacBitrate > 0 || r.IsAac;
+        double refFreq = isLossy ? 20500 : nyquist;
+        double ratio = refFreq > 0 ? r.CutoffFrequency / refFreq : 1.0;
+        string pctLabel = isLossy ? "% макс. кодека" : "% Найквиста";
 
         // Section 1
         string authRu = ResolveAuthenticityLabel(r);
         sb.Append("1. СТАТУС: ").Append(authRu);
         sb.Append(" | срез на ").Append($"{r.CutoffFrequency:F0} Гц");
         if (!r.IsMqa && !r.IsHdcd)
-            sb.Append($" ({ratio * 100:F0}% Найквиста)");
+            sb.Append($" ({ratio * 100:F0}{pctLabel})");
         if (r.ShelfType.Length > 0)
         {
             string shelf = r.ShelfType switch
@@ -67,7 +70,7 @@ public class VerdictGenerator
         if (r.Correlation < 0)
             flags.Add($"Корреляция фазы: {r.Correlation:F2} (несовместимо с моно)");
         if (r.LsbZeroPadded)
-            flags.Add($"24-бит с нулевыми младшими битами (эфф. {r.EffectiveBitDepth}-бит)");
+            flags.Add($"{r.BitDepth}-бит с нулевыми младшими битами (эфф. {r.EffectiveBitDepth}-бит)");
         if (r.BitDepthSuspicious)
             flags.Add($"Битовая глубина подозрительна");
         if (r.IsUpscale)
@@ -121,12 +124,15 @@ public class VerdictGenerator
     {
         var sb = new StringBuilder();
         var nyquist = r.SampleRate / 2.0;
-        double ratio = nyquist > 0 ? r.CutoffFrequency / nyquist : 1.0;
         bool isHiRes = r.SampleRate >= 88200;
+        bool isLossy = r.Mp3Bitrate > 0 || r.AacBitrate > 0 || r.IsAac;
+        double refFreq = isLossy ? 20500 : nyquist;
+        double ratio = refFreq > 0 ? r.CutoffFrequency / refFreq : 1.0;
+        string pctLabel = isLossy ? "% макс. кодека" : "% Найквиста";
 
         sb.Append("Срез ").Append($"{r.CutoffFrequency:F0} Гц");
         if (r.SampleRate < 88200)
-            sb.Append($" ({ratio * 100:F0}% Найквиста)");
+            sb.Append($" ({ratio * 100:F0}{pctLabel})");
 
         if (r.ShelfType == "Brickwall")
         {
@@ -169,7 +175,10 @@ public class VerdictGenerator
         {
             sb.Append(". Битрейт: ").Append(br).Append(" kbps");
             if (r.CompressionRatio > 0)
-                sb.Append(" (сжатие ").Append($"{r.CompressionRatio * 100:F0}%").Append(")");
+            {
+                string compLabel = r.CompressionRatio <= 1.0 ? "сжатие " : "раздутие ";
+                sb.Append(" (").Append(compLabel).Append($"{r.CompressionRatio * 100:F0}%").Append(")");
+            }
         }
 
         if (r.IsSuspiciousBitrate)
@@ -214,7 +223,8 @@ public class VerdictGenerator
             string s when s.StartsWith("TRANSCODE") => "Транскод из lossy в lossless-контейнер.",
             "MQA" => "MQA-контейнер, требуется специальный декодер.",
             "CORRUPTED" => "Файл повреждён — битовые ошибки в потоке.",
-            _ => "Статус не определён."
+            "SKIPPED" => "Файл пропущен (неподдерживаемый или слишком короткий).",
+            _ => $"Результат анализа: {r.Authenticity}."
         };
     }
 }

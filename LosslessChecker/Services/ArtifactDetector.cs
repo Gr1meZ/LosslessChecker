@@ -99,10 +99,16 @@ public class ArtifactDetector
 
         // If cutoff is near Nyquist, there's not enough HF spectrum
         // to reliably detect artifacts — skip to avoid false positives.
-        // 48kHz guard: MP3 at 48k cuts off ≤20.5 kHz (85%). Cutoff at 88%+
-        // Nyquist (21.1 kHz) leaves too little room — any flatness there is noise, not artifacts.
+        // Per-sample-rate guards: above these ratios, the remaining HF bandwidth
+        // is too narrow to distinguish codec artifacts from ADC noise.
         double cutoffRatio = cutoffFrequency / (sampleRate / 2.0);
-        double skipThreshold = sampleRate == 48000 ? 0.88 : 0.95;
+        double skipThreshold = sampleRate switch
+        {
+            44100 => 0.92,
+            48000 => 0.88,
+            >= 88200 => 0.50,
+            _ => 0.92
+        };
         if (cutoffRatio > skipThreshold)
             return (false, "None", "None");
 
@@ -116,7 +122,7 @@ public class ArtifactDetector
             (hasArtifacts, level) = (true, "Strong");
         else if (avgFlatness > 0.35 && avgSlope < -0.08)
             (hasArtifacts, level) = (true, "Medium");
-        else if (avgFlatness > 0.2 || avgSlope < -0.06)
+        else if (avgFlatness > 0.2 && avgSlope < -0.06)
             (hasArtifacts, level) = (true, "Weak");
         else
             (hasArtifacts, level) = (false, "None");
@@ -134,6 +140,7 @@ public class ArtifactDetector
     private static bool DetectMp3Sizzle(float[] samples, int sampleRate, double cutoffFreq)
     {
         if (sampleRate < 44100) return false;
+        if (cutoffFreq > 20000) return false;
 
         int fftSize = 4096;
         var fft = new Fft(fftSize);
@@ -158,7 +165,8 @@ public class ArtifactDetector
             Array.Clear(sizzleImag, 0, fftSize);
             fft.Direct(sizzleReal, sizzleImag);
 
-            for (int i = bin15500; i < bin16500 && i < sizzleReal.Length / 2; i++)
+            int sizzleEnd = Math.Min(bin16500, cutoffBin);
+            for (int i = bin15500; i < sizzleEnd && i < sizzleReal.Length / 2; i++)
                 sizzleEnergy += sizzleReal[i] * sizzleReal[i] + sizzleImag[i] * sizzleImag[i];
 
             for (int i = bin15500; i < cutoffBin && i < sizzleReal.Length / 2; i++)
@@ -173,10 +181,17 @@ public class ArtifactDetector
         return ratio > 0.4;
     }
 
-    public bool DetectSpectralHoles(double[] avgSpectrum, double nyquist)
+    public bool DetectSpectralHoles(double[] avgSpectrum, double nyquist, double cutoffHz = 0)
     {
         int bins = avgSpectrum.Length;
         if (bins < 100) return false;
+
+        // Restrict search: spectral holes above the cutoff are just noise floor,
+        // not MP3 psychoacoustic artifacts. Only count holes below the cutoff.
+        int searchEnd = cutoffHz > 0 && nyquist > 0
+            ? Math.Min(bins - 1, (int)(cutoffHz / nyquist * bins))
+            : bins - 1;
+        if (searchEnd < bins / 3) return false;
 
         // MP3 spectral holes: isolated bins with unusually low energy
         // surrounded by higher energy bins (psychoacoustic masking removal)
@@ -184,7 +199,7 @@ public class ArtifactDetector
         int holeCount = 0;
         double prevDb = 20.0 * Math.Log10(Math.Max(avgSpectrum[searchStart], 1e-10));
 
-        for (int i = searchStart + 1; i < bins - 1; i++)
+        for (int i = searchStart + 1; i < searchEnd; i++)
         {
             double db = 20.0 * Math.Log10(Math.Max(avgSpectrum[i], 1e-10));
             double nextDb = 20.0 * Math.Log10(Math.Max(avgSpectrum[i + 1], 1e-10));

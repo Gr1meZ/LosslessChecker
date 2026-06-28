@@ -144,6 +144,15 @@ public class LosslessScorer
         if (r.LsbZeroPadded && r.BitDepth >= 24) return Math.Max(0, score - _p.LsbZeroPadPenaltyAuth);
         if (r.BitDepthSuspicious) score -= _p.BitDepthSuspiciousPenaltyAuth;
 
+        // Cutoff penalty for ALL shelf types. A cutoff significantly below
+        // Nyquist is inherently suspicious regardless of the rolloff shape.
+        if (!isHiRes)
+        {
+            if (ratio < 0.65) score -= _p.CutoffPenaltyBrickwallCodec;
+            else if (ratio < 0.80) score -= _p.CutoffPenaltyBrickwallCodec / 2;
+            else if (ratio < 0.90) score -= _p.CutoffPenaltyBrickwallNearNyquist;
+        }
+
         if (r.ShelfType == "Brickwall")
         {
             if (isHiRes)
@@ -170,6 +179,9 @@ public class LosslessScorer
                 _ => 0
             };
         }
+
+        if (r.EncoderMatch.StartsWith("MP3") || r.EncoderMatch.StartsWith("AAC"))
+            score -= 20;
 
         if (r.HasAliasing) score -= _p.AliasingPenalty;
         if (r.HasRinging) score -= _p.RingingPenalty;
@@ -205,6 +217,9 @@ public class LosslessScorer
 
         if (Math.Abs(r.DcOffsetL) > 1.0 || Math.Abs(r.DcOffsetR) > 1.0) score -= _p.DcOffsetSeverePenalty;
         if (r.Correlation < -0.5) score -= _p.PhaseBadPenaltyMastering;
+
+        if (r.IsFakeStereo) score -= 5;
+        if (r.HasAbruptEdges) score -= 3;
 
         return Math.Max(0, Math.Min(100, score));
     }

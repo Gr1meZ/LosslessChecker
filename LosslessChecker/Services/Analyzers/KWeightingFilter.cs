@@ -50,7 +50,7 @@ public sealed class Biquad
 
     public static Biquad HighShelf(double f0, double q, double gainDb, int fs)
     {
-        double a = Math.Pow(10, gainDb / 40);
+        double a = Math.Pow(10, gainDb / 20);
         double w0 = 2.0 * Math.PI * f0 / fs;
         double cosW0 = Math.Cos(w0);
         double sinW0 = Math.Sin(w0);

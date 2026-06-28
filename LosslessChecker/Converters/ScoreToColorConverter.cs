@@ -17,9 +17,9 @@ public class ScoreToColorConverter : IValueConverter
 
         string key = score switch
         {
-            >= 70 => "LosslessGreenBrush",
-            >= 40 => "SuspiciousAmberBrush",
-            _ => "FakeRedBrush"
+            >= 70 => "SignalGreenBrush",
+            >= 40 => "SignalAmberBrush",
+            _ => "SignalRedBrush"
         };
 
         return System.Windows.Application.Current.TryFindResource(key) as System.Windows.Media.Brush

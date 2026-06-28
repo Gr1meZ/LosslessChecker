@@ -49,7 +49,6 @@ public class CutoffDetector
         double hfThreshold = sortedByHf[topCount - 1].hfEnergy;
         var topPositions = new HashSet<int>(sortedByHf.Take(topCount).Select(f => f.pos));
 
-        // Second pass: re-run FFT only for top frames to build averaged spectrum
         var avgMagnitudes = new double[FftSize / 2];
         int accumulatedFrames = 0;
 
@@ -75,7 +74,7 @@ public class CutoffDetector
                 avgMagnitudes[i] /= accumulatedFrames;
         }
 
-        var (cutoff, cutoffSlope) = FindCutoffByDerivative(avgMagnitudes, nyquist);
+        var (cutoff, cutoffSlope) = FindCutoffByNoiseFloor(avgMagnitudes, nyquist);
         return (cutoff, cutoffSlope, avgMagnitudes);
     }
 
@@ -93,135 +92,98 @@ public class CutoffDetector
         var nyquist = sampleRate / 2.0;
         if (cutoffHz >= nyquist * 0.97) return 0;
 
-        if (cutoffHz <= 16500) return 128;
-        if (cutoffHz <= 18500) return 192;
-        if (cutoffHz <= 20000) return 256;
+        if (cutoffHz <= 16000) return 128;
+        if (cutoffHz <= 18000) return 192;
+        if (cutoffHz <= 19000) return 256;
         if (cutoffHz <= 20500) return 320;
         return 0;
     }
 
-    // === NEW: Derivative-based cutoff detection ===
-    // Instead of a fixed -60 dB amplitude threshold (which fails on quiet tracks
-    // and is fooled by dither noise), we search for the STEEPEST NEGATIVE SLOPE
-    // in the dB spectrum. A brickwall encoder creates a 30-40 dB drop over a few
-    // bins → large negative derivative. Natural rolloff is gentle (−3 to −8 dB/oct).
-    //
-    // Algorithm:
-    //   1. Convert averaged spectrum to dB (ref=peak in low band)
-    //   2. Smooth the dB array (3-bin moving average to reduce FFT ripple)
-    //   3. Compute sliding window slope (dB per octave) at each bin
-    //   4. Find bin with the most negative slope in upper 2/3 of spectrum
-    //   5. If slope < −18 dB/oct → brickwall at that bin → cutoff
-    //   6. If slope >= −10 dB/oct → natural rolloff → return Nyquist (no penalizable cutoff)
-    //   7. If slope in [−18, −10] → mild filtering, use that bin as cutoff
-
-    private static (double cutoff, double cutoffSlope) FindCutoffByDerivative(
+    private static (double cutoff, double cutoffSlope) FindCutoffByNoiseFloor(
         double[] avgMagnitudes, double nyquist)
     {
         int bins = avgMagnitudes.Length;
         if (bins < 10) return (nyquist, 0);
 
-        // 1. Find peak in low band for dB reference
-        double peakMag = 0;
-        for (int i = 0; i < bins / 6; i++)
-            peakMag = Math.Max(peakMag, avgMagnitudes[i]);
-        if (peakMag <= 0) return (nyquist, 0);
+        // 1. Divide spectrum into 1-kHz bands and compute average dB per band.
+        double hzPerBin = nyquist / bins;
+        int bandsPerKhz = (int)Math.Max(1, 1000.0 / hzPerBin);
+        int numBands = Math.Max(2, bins / bandsPerKhz);
 
-        // 2. Convert to dB spectrum
-        var spectrumDb = new double[bins];
-        for (int i = 0; i < bins; i++)
-            spectrumDb[i] = 20.0 * Math.Log10(Math.Max(avgMagnitudes[i], 1e-10) / peakMag);
-
-        // 3. Smooth with 5-bin moving average
-        var smoothed = new double[bins];
-        for (int i = 0; i < bins; i++)
+        var bandDb = new double[numBands];
+        double peakDb = double.MinValue;
+        for (int band = 0; band < numBands; band++)
         {
-            double sum = 0; int count = 0;
-            for (int j = Math.Max(0, i - 2); j <= Math.Min(bins - 1, i + 2); j++)
-            { sum += spectrumDb[j]; count++; }
-            smoothed[i] = sum / count;
+            int start = band * bandsPerKhz;
+            int end = Math.Min(bins, (band + 1) * bandsPerKhz);
+            if (end <= start) { bandDb[band] = -200; continue; }
+
+            double sumMag = 0;
+            for (int i = start; i < end; i++)
+                sumMag += avgMagnitudes[i];
+            double avgMag = sumMag / (end - start);
+            double db = 20.0 * Math.Log10(Math.Max(avgMag, 1e-10));
+            bandDb[band] = db;
+            if (db > peakDb) peakDb = db;
         }
 
-        // 4. Compute sliding slope in dB/octave across a 30-bin window.
-        // Scan left-to-right; weight slopes by normalized frequency so that
-        // brickwalls near Nyquist (codec cutoff) are preferred over steeper
-        // but lower-frequency internal mix filters (e.g. synth LP at 8 kHz).
-        const int windowBins = 30;
-        double freqPerBin = nyquist / bins;
-        double bestWeightedSlope = 0; // weighted: more negative = better
-        int bestBin = bins - 1;
-        double bestRawSlope = 0;
+        // Normalize to peak dB
+        for (int band = 0; band < numBands; band++)
+            bandDb[band] -= peakDb;
 
-        int searchStart = bins / 3;
+        // 2. Scan from Nyquist downward. Find the first significant energy band,
+        //    then check for an abrupt drop at the boundary of that band.
+        //    A drop of ≥35 dB/oct between adjacent 1-kHz bands indicates
+        //    an unnatural cutoff (codec brickwall or resampling artifact).
+        double cutoffHz = nyquist;
+        double cutoffSlope = 0;
 
-        for (int center = searchStart; center < bins - windowBins / 2; center++)
+        for (int band = numBands - 1; band >= 2; band--)
         {
-            int wStart = Math.Max(1, center - windowBins / 2);
-            int wEnd = Math.Min(bins - 1, center + windowBins / 2);
-            if (wEnd - wStart < 10) continue;
+            double currentDb = bandDb[band];
+            double belowDb = bandDb[band - 1];
+            double aboveDb = band < numBands - 1 ? bandDb[band + 1] : -200;
 
-            double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-            int n = 0;
-            for (int i = wStart; i <= wEnd; i++)
+            // Skip bands deep in the noise floor
+            if (currentDb < -70 && belowDb < -70) continue;
+
+            // If the band ABOVE is in noise (-70dB) and current band IS
+            // in noise, we haven't reached signal yet
+            if (belowDb < -70) continue;
+
+            // Found a band with signal (belowDb > -70).
+            // Check the drop between belowDb (signal band) and currentDb
+            // (this band or the band above).
+            double drop = belowDb - currentDb;
+
+            if (drop >= 35 && belowDb > -45)
             {
-                double freq = i * freqPerBin;
-                if (freq < 1) continue;
-                double x = Math.Log2(freq / 1000.0);
-                double y = smoothed[i];
-                sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x; n++;
+                // Sharp drop found — unnatural cutoff.
+                // Cutoff = top edge of the "below" band = (band) * 1 kHz
+                cutoffHz = band * 1000.0;
+                cutoffSlope = -drop * 2; // approximate dB/oct for 0.5 oct spans
+                break;
             }
 
-            if (n < 5) continue;
-            double denom = n * sumX2 - sumX * sumX;
-            if (Math.Abs(denom) < 1e-10) continue;
-            double slope = (n * sumXY - sumX * sumY) / denom;
-
-            // Weight: slopes at higher frequencies get a bonus (more negative weight).
-            // A -20 dB/oct at 20 kHz beats a -25 dB/oct at 8 kHz.
-            double freqWeight = (double)center / bins;
-            double weightedSlope = slope * (0.5 + 0.5 * freqWeight);
-
-            if (weightedSlope < bestWeightedSlope)
+            // No sharp drop — this is a natural continuation.
+            // Cutoff = top edge of this band (the last band with signal).
+            if (belowDb > -45)
             {
-                bestWeightedSlope = weightedSlope;
-                bestRawSlope = slope;
-                bestBin = center;
+                cutoffHz = Math.Min(nyquist, band * 1000.0);
+                cutoffSlope = -0.5; // gentle slope → Natural
+                break;
             }
         }
 
-        bool isBrickwall = bestRawSlope < -18;
-        if (isBrickwall && bestBin > 0 && bestBin < bins - 1)
-        {
-            int beforeStart = Math.Max(1, bestBin - 40);
-            int afterEnd = Math.Min(bins - 1, bestBin + 40);
-            double beforeAvg = 0, afterAvg = 0;
-            int beforeCount = 0, afterCount = 0;
-            for (int i = beforeStart; i < bestBin; i++) { beforeAvg += smoothed[i]; beforeCount++; }
-            for (int i = bestBin + 1; i <= afterEnd; i++) { afterAvg += smoothed[i]; afterCount++; }
-            beforeAvg = beforeCount > 0 ? beforeAvg / beforeCount : -100;
-            afterAvg = afterCount > 0 ? afterAvg / afterCount : -100;
-
-            if (beforeAvg - afterAvg < 12 || afterAvg > beforeAvg - 12)
-                isBrickwall = false;
-        }
-
-        double cutoffHz;
-        if (isBrickwall)
-        {
-            cutoffHz = SubBinFrequency(bestBin, bins, nyquist, smoothed);
-        }
-        else if (bestRawSlope < -10)
-        {
-            if (bestRawSlope < -18) bestRawSlope = -14;
-            cutoffHz = SubBinFrequency(bestBin, bins, nyquist, smoothed);
-        }
-        else
+        // 3. If cutoff is very close to Nyquist (within 1 kHz), the recording
+        //    has full bandwidth — return Nyquist with natural slope.
+        if (cutoffHz >= nyquist - 1000)
         {
             cutoffHz = nyquist;
-            bestRawSlope = 0;
+            cutoffSlope = 0;
         }
 
-        return (cutoffHz, Math.Round(bestRawSlope, 2));
+        return (cutoffHz, Math.Round(cutoffSlope, 2));
     }
 
     private static double SubBinFrequency(int bestBin, int bins, double nyquist, double[] smoothed)
@@ -250,7 +212,6 @@ public class CutoffDetector
         double ratio = nyquist > 0 ? cutoffHz / nyquist : 1.0;
         bool isHiRes = sampleRate >= 88200;
 
-        // Shelf type from slope
         string shelfType = cutoffSlope switch
         {
             < -18 => "Brickwall",
@@ -258,9 +219,6 @@ public class CutoffDetector
             _ => "Natural"
         };
 
-        // For Hi-Res files: if cutoff is above CD Nyquist (22.05kHz),
-        // this is a legitimate Hi-Res recording, not a codec artifact.
-        // Codec encoder labels (MP3 128-192, etc.) only apply below 22kHz.
         string encoderMatch;
         if (isHiRes && cutoffHz > 22100)
         {
@@ -278,20 +236,14 @@ public class CutoffDetector
             };
         }
 
-        // Override: if ratio > 0.95, encoder match is None regardless
         if (!isHiRes && ratio >= 0.95)
             encoderMatch = "None";
 
-        // 48kHz guard: brickwall at >90% Nyquist (21600 Hz) is a mastering LP filter, not a codec.
-        // MP3 at 48kHz cuts off at ≤20.5 kHz (85%). Anything above is too high for a lossy encoder.
+        if (sampleRate == 44100 && ratio >= 0.93 && shelfType == "Brickwall")
+            shelfType = "Filtered";
         if (sampleRate == 48000 && ratio >= 0.90 && shelfType == "Brickwall")
             shelfType = "Filtered";
 
-        // Override: only reclassify brickwall as natural if ratio >= 0.97
-        // (cutoff within 3% of Nyquist). ADC anti-aliasing filters sit right at
-        // Nyquist. Below 0.97, even a "brickwall" at 20kHz/44.1kHz (ratio 0.907)
-        // is suspicious — it matches MP3 320 / AAC 256 cutoff and should NOT be
-        // cleared as "Natural".
         if (ratio >= 0.97 && shelfType == "Brickwall")
             shelfType = "Natural";
 
@@ -313,12 +265,6 @@ public class CutoffDetector
     public bool IsFakeHiRes(double cutoffHz, string shelfType, int sampleRate)
     {
         if (sampleRate < 88200) return false;
-        // Fake Hi-Res = brickwall at known upscale frequencies:
-        //   16-17 kHz: MP3 128 kbps upscaled to Hi-Res
-        //   18-20 kHz: MP3 192-320 / AAC upscaled
-        //   20-22.1 kHz: CD (44.1k) upscaled to Hi-Res
-        // Real acoustic recordings may have natural rolloff at any frequency,
-        // but they won't have a brickwall shelf at these exact points.
         return shelfType == "Brickwall"
             && ((cutoffHz >= 15500 && cutoffHz <= 17000)
                 || (cutoffHz >= 18000 && cutoffHz <= 20000)
@@ -335,11 +281,9 @@ public class CutoffDetector
         bool isHiRes = sampleRate >= 88200;
         var nyquist = sampleRate / 2.0;
 
-        // 1a. Fake 24-bit
         if (lsbZeroPadded && bitDepth == 24)
             return ("Fake 24-bit", "FAKE 24bit");
 
-        // 1b. Transcode: brickwall + artifacts in non-MP3/non-AAC container
         if (shelfType == "Brickwall" && (artifactLevel == "Strong" || artifactLevel == "Medium"))
         {
             if (cutoffHz <= 17000)
@@ -351,7 +295,6 @@ public class CutoffDetector
             return ("Full Range", "UPSCALE (MP3->FLAC)");
         }
 
-        // 2. Hi-Res
         if (isHiRes)
         {
             string bw = $"Hi-Res ({sampleRate / 1000:F0}k)";
@@ -362,17 +305,21 @@ public class CutoffDetector
             return (bw, $"HI-RES {sampleRate / 1000:F0}k");
         }
 
-        // 3. Lossless — any file without lossy compression artifacts
         if (!isHiRes)
         {
             bool hasLossyArtifacts = shelfType == "Brickwall"
                 && (artifactLevel != "None" || cutoffHz < nyquist * 0.90)
                 || ((artifactLevel == "Strong" || artifactLevel == "Medium") && hasSpectralHoles);
 
-            bool isTooLowForLossless = cutoffHz < nyquist * 0.80 && artifactLevel != "None";
+            bool isTooLowForLossless = cutoffHz < nyquist * 0.80;
 
             if ((!hasLossyArtifacts || shelfType == "Natural") && !isTooLowForLossless)
             {
+                // If encoder match points to a lossy codec and cutoff isn't near Nyquist,
+                // this is suspicious — don't call it LOSSLESS.
+                if ((encoderMatch.StartsWith("MP3") || encoderMatch.StartsWith("AAC")) && cutoffHz < nyquist * 0.95)
+                    return ($"{cutoffHz / 1000:F0}kHz", "UNCERTAIN");
+
                 string bw = cutoffHz >= nyquist * 0.92 ? "Full Range" : $"{cutoffHz / 1000:F0}kHz";
                 string dt;
                 if (isCdAligned && sampleRate == 44100)
@@ -388,8 +335,6 @@ public class CutoffDetector
                 return (bw, dt);
             }
 
-            // Very low cutoff with non-brickwall shelf and weak artifacts
-            // — likely analog tape, vintage recording, or aggressive mastering LPF
             if (artifactLevel == "Weak" && shelfType != "Brickwall" && cutoffHz < nyquist * 0.80)
             {
                 string bw = $"{cutoffHz / 1000:F0}kHz";
@@ -397,7 +342,6 @@ public class CutoffDetector
                 return (bw, dt);
             }
 
-            // Has some lossy artifacts but not clearly brickwall — borderline
             if (artifactLevel == "Weak" && shelfType != "Brickwall")
             {
                 string bw = cutoffHz >= nyquist * 0.85 ? "Full Range" : $"{cutoffHz / 1000:F0}kHz";
@@ -405,7 +349,6 @@ public class CutoffDetector
             }
         }
 
-        // 4. MP3 / AAC via encoder match
         if (encoderMatch.StartsWith("MP3"))
         {
             string bw = cutoffHz switch
@@ -426,20 +369,15 @@ public class CutoffDetector
             return (bw, dt);
         }
 
-        // 5. UNCERTAIN fallback — refine based on available evidence
         if (shelfType == "Brickwall" && (artifactLevel == "Strong" || artifactLevel == "Medium"))
             return ($"{cutoffHz / 1000:F0}kHz", "LOSSY (TRANSCODE)");
         if (shelfType == "Filtered" && artifactLevel == "None" && cutoffHz >= nyquist * 0.85)
             return ($"{cutoffHz / 1000:F0}kHz", "LOSSLESS (WEB)");
-        if (cutoffHz < nyquist * 0.85 && artifactLevel == "None")
+        if (cutoffHz < nyquist * 0.85 && artifactLevel == "None" && cutoffHz >= nyquist * 0.65)
             return ($"{cutoffHz / 1000:F0}kHz", "LOSSLESS (Mastered LPF)");
         return ($"{cutoffHz / 1000:F0}kHz", "UNCERTAIN");
     }
 
-    /// <summary>
-    /// Checks whether the spectrum above the cutoff is effectively absolute silence
-    /// (lossy codec signature) vs. analog noise or dither (legitimate LPF).
-    /// </summary>
     public static bool HasAbsoluteSilence(double[] averagedSpectrum, double cutoffHz, double sampleRate)
     {
         var nyquist = sampleRate / 2.0;
@@ -448,19 +386,15 @@ public class CutoffDetector
 
         if (cutoffBin >= averagedSpectrum.Length - 1) return false;
 
-        // Look for absolute digital silence above cutoff
         int silenceCount = 0;
         int checkCount = 0;
         for (int i = cutoffBin; i < averagedSpectrum.Length; i++)
         {
-            // Values below ~1e-15 are well below any dither floor.
-            // Analog noise or shaped dither sits at ~1e-6 to 1e-10.
             if (averagedSpectrum[i] < 1e-15)
                 silenceCount++;
             checkCount++;
         }
 
-        // Classify as codec silence only if >95% of bins above cutoff are dead
         return checkCount > 10 && (double)silenceCount / checkCount > 0.95;
     }
 }

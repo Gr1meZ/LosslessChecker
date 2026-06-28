@@ -7,7 +7,7 @@ public class TruePeakDetector : IChunkAccumulator<TruePeakResult>
 {
     private const int OversampleFactor = 4;
     private const int ClipRunMin = 3;
-    private const int FirTaps = 40;
+    private const int FirTaps = 64;
     private const int PhaseTaps = FirTaps / OversampleFactor;
 
     private static readonly double[][] PolyphaseFilters = BuildPolyphaseFilters();
@@ -39,7 +39,6 @@ public class TruePeakDetector : IChunkAccumulator<TruePeakResult>
             float s = mono[i];
             float abs = Math.Abs(s);
             if (abs > _peakL) _peakL = abs;
-            if (abs > _truePeakL) _truePeakL = abs;
 
             _consecutiveL = abs >= 1.0f ? _consecutiveL + 1 : 0;
             if (_consecutiveL >= ClipRunMin) { _clippedRunsL++; _consecutiveL = 0; }
@@ -59,8 +58,6 @@ public class TruePeakDetector : IChunkAccumulator<TruePeakResult>
 
             if (absL > _peakL) _peakL = absL;
             if (absR > _peakR) _peakR = absR;
-            if (absL > _truePeakL) _truePeakL = absL;
-            if (absR > _truePeakR) _truePeakR = absR;
 
             _consecutiveL = absL >= 1.0f ? _consecutiveL + 1 : 0;
             if (_consecutiveL >= ClipRunMin) { _clippedRunsL++; _consecutiveL = 0; }
@@ -139,24 +136,60 @@ public class TruePeakDetector : IChunkAccumulator<TruePeakResult>
 
     private static double[][] BuildPolyphaseFilters()
     {
-        double[] fir = {
-            -0.000003, -0.000018, -0.000026,  0.000066,  0.000222,  0.000119,
-            -0.000489, -0.000738,  0.000889,  0.002327,  0.001263, -0.003958,
-            -0.006047,  0.006114,  0.014570,  0.006536, -0.020278, -0.035127,
-             0.035480,  0.108330,  0.108330,  0.035480, -0.035127, -0.020278,
-             0.006536,  0.014570,  0.006114, -0.006047, -0.003958,  0.001263,
-             0.002327,  0.000889, -0.000738, -0.000489,  0.000119,  0.000222,
-             0.000066, -0.000026, -0.000018, -0.000003
-        };
+        // Proper 64-tap Kaiser-windowed sinc for 4x oversampling (cutoff = π/4)
+        // Each polyphase branch is independently normalized to DC gain = 1.0
+        const int L = 4;
+        const int N = 64;
+        const double beta = 7.5;
+        const double cutoff = 0.5 / L;
 
-        var filters = new double[OversampleFactor][];
-        for (int phase = 0; phase < OversampleFactor; phase++)
+        double support = (N - 1) / 2.0;
+        double[] fir = new double[N];
+
+        // Design ideal sinc * Kaiser window
+        for (int n = 0; n < N; n++)
+        {
+            double x = n - support;
+            double h = x == 0 ? cutoff * 2.0 : Math.Sin(2.0 * Math.PI * cutoff * x) / (Math.PI * x);
+            fir[n] = h * KaiserWindow(x / support, beta);
+        }
+
+        // Normalize full FIR to DC gain = L (oversampling factor).
+        // For 4x interpolation, after upsampling (zero-insertion) the DC gain
+        // must be 4, not 1, to preserve original amplitude.
+        double totalSum = 0;
+        for (int n = 0; n < N; n++) totalSum += fir[n];
+        if (Math.Abs(totalSum) > 1e-10)
+            for (int n = 0; n < N; n++) fir[n] = fir[n] * L / totalSum;
+
+        // Polyphase decomposition (no per-phase normalization)
+        var filters = new double[L][];
+        for (int phase = 0; phase < L; phase++)
         {
             filters[phase] = new double[PhaseTaps];
             for (int k = 0; k < PhaseTaps; k++)
-                filters[phase][k] = fir[k * OversampleFactor + phase];
+                filters[phase][k] = fir[k * L + phase];
         }
         return filters;
+    }
+
+    private static double KaiserWindow(double x, double beta)
+    {
+        if (Math.Abs(x) >= 1.0) return 0;
+        double arg = beta * Math.Sqrt(1.0 - x * x);
+        return BesselI0(arg) / BesselI0(beta);
+    }
+
+    private static double BesselI0(double x)
+    {
+        double sum = 1.0, term = 1.0;
+        for (int k = 1; k <= 25; k++)
+        {
+            term *= x * x / (4.0 * k * k);
+            sum += term;
+            if (term < 1e-15) break;
+        }
+        return sum;
     }
 }
 
